@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-cyber-purple/20;
+  }
+
+  body {
+    @apply min-h-screen bg-cyber-bg font-body text-cyber-text antialiased;
+    background-image:
+      radial-gradient(ellipse at 20% 0%, rgba(176, 38, 255, 0.08) 0%, transparent 50%),
+      radial-gradient(ellipse at 80% 100%, rgba(255, 107, 0, 0.06) 0%, transparent 50%);
+  }
+
+  #root {
+    @apply min-h-screen;
+  }
+}
+
+@layer utilities {
+  .cyber-border {
+    @apply border border-cyber-purple/50;
+  }
+
+  .cyber-border-orange {
+    @apply border border-cyber-orange/50;
+  }
+}

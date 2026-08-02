@@ -1,0 +1,28 @@
+{
+  "name": "cyberbang",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cyberpunk browser version of Bang!",
+  "workspaces": [
+    "shared",
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "build:shared": "npm run build -w @cyberbang/shared",
+    "build": "npm run build:shared && npm run build -w @cyberbang/server && npm run build -w @cyberbang/client",
+    "typecheck": "npm run build:shared && npm run typecheck -w @cyberbang/shared && npm run typecheck -w @cyberbang/server && npm run typecheck -w @cyberbang/client",
+    "dev:server": "npm run build:shared && npm run dev -w @cyberbang/server",
+    "dev:client": "npm run dev -w @cyberbang/client",
+    "dev": "npm run build:shared && npx concurrently -n server,client -c magenta,cyan \"npm run dev -w @cyberbang/server\" \"npm run dev -w @cyberbang/client\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "uuid": "^14.0.1"
+  }
+}
