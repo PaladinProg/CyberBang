@@ -90,7 +90,3 @@ npm run typecheck    # Проверка типов во всех пакетах
 npm run build:shared # Сборка shared (нужна перед server)
 npm run build        # Полная production-сборка
 ```
-
-## Следующий спринт
-
-Спринт 2: раздача ролей, персонажей и стартовых карт (`prepareGame`).
