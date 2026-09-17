@@ -65,7 +65,10 @@ export function GameTable() {
       setDefenseConfig({ show: true, requiredCardType: data.requiredDefense });
     };
 
-    const handleBarrelDefense = () => {};
+    const handleBarrelDefense = (data: { playerId: string }) => {
+      const protectedPlayer = gameState.players.find(p => p.id === data.playerId);
+      console.log(`🛡️ Прокси-сервер спас ${protectedPlayer?.nickname || 'игрока'}!`);
+    };
     const handleCriticalDamage = () => setShowCriticalModal(true);
 
     socket.on('criticalDamage', handleCriticalDamage);
@@ -103,6 +106,7 @@ export function GameTable() {
       CardType.DUEL,
       CardType.SOCIAL_ENGINEERING,
       CardType.VPN,
+      CardType.QUARANTINE,
     ].includes(cardType);
   };
 
@@ -170,11 +174,44 @@ export function GameTable() {
     }
   };
 
+  
+
   const lastDiscardedCard = gameState.discardPile.length > 0 
     ? gameState.discardPile[gameState.discardPile.length - 1] 
     : null;
   
   const isCheckCard = lastDiscardedCard && lastDiscardedCard.suit && lastDiscardedCard.rank;
+
+  // Состояние активной проверки карты контроля:
+  const [activeCheck, setActiveCheck] = useState<{
+    card: any;
+    result: 'EXPLOSION' | 'FREE' | 'FAILED' | null;
+  } | null>(null);
+
+  // Следим за сбросом в фазе проверки START:
+  const [prevDiscardCount, setPrevDiscardCount] = useState(gameState.discardPile.length);
+  useEffect(() => {
+    if (gameState.discardPile.length > prevDiscardCount) {
+      const topCard = gameState.discardPile[gameState.discardPile.length - 1];
+      if (gameState.turnPhase === TurnPhase.START && topCard && topCard.suit && topCard.rank) {
+        let result: 'EXPLOSION' | 'FREE' | 'FAILED' | null = null;
+        if (topCard.suit === Suit.SPADES && topCard.rank >= 2 && topCard.rank <= 9) {
+          result = 'EXPLOSION';
+        } else if (topCard.suit === Suit.HEARTS) {
+          result = 'FREE';
+        } else {
+          result = 'FAILED';
+        }
+        setActiveCheck({ card: topCard, result });
+        const timer = setTimeout(() => {
+          setActiveCheck(null);
+        }, 2500);
+        setPrevDiscardCount(gameState.discardPile.length);
+        return () => clearTimeout(timer);
+      }
+      setPrevDiscardCount(gameState.discardPile.length);
+    }
+  }, [gameState.discardPile.length, gameState.turnPhase, prevDiscardCount]);
 
   return (
     <div className="min-h-screen bg-[#0a0a0f] text-white flex flex-col overflow-hidden relative">
@@ -361,33 +398,37 @@ export function GameTable() {
               </div>
 
               {/* Зона Проверки (Центр) */}
-              <div className="absolute top-0 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 h-32 justify-end pb-4 pointer-events-none">
-                 <AnimatePresence mode="wait">
-                    {isCheckCard && (
-                       <motion.div 
-                          key={lastDiscardedCard!.id}
-                          initial={{ y: -50, opacity: 0, rotateY: 90 }}
-                          animate={{ y: 0, opacity: 1, rotateY: 0 }}
-                          exit={{ y: 50, opacity: 0 }}
+              {/* Зона Проверки (Центр) - появляется только во время проверки и исчезает через 2.5 сек */}
+              <div className="absolute top-0 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 h-32 justify-end pb-4 pointer-events-none z-20">
+                <AnimatePresence mode="wait">
+                    {activeCheck && (
+                      <motion.div 
+                          key={activeCheck.card.id}
+                          initial={{ y: -50, opacity: 0, scale: 0.8, rotateY: 90 }}
+                          animate={{ y: 0, opacity: 1, scale: 1, rotateY: 0 }}
+                          exit={{ y: 30, opacity: 0, scale: 0.5 }}
                           transition={{ type: "spring", stiffness: 200, damping: 20 }}
                           className="w-16 h-24 bg-white rounded border border-gray-300 shadow-2xl flex flex-col items-center justify-center relative"
-                       >
-                          <div className="text-2xl font-bold" style={{ color: getSuitColor(lastDiscardedCard!.suit) }}>
-                             {getRankSymbol(lastDiscardedCard!.rank)}
+                      >
+                          <div className="text-2xl font-bold" style={{ color: getSuitColor(activeCheck.card.suit) }}>
+                            {getRankSymbol(activeCheck.card.rank)}
                           </div>
-                          <div className="text-3xl" style={{ color: getSuitColor(lastDiscardedCard!.suit) }}>
-                             {getSuitSymbol(lastDiscardedCard!.suit)}
+                          <div className="text-3xl" style={{ color: getSuitColor(activeCheck.card.suit) }}>
+                            {getSuitSymbol(activeCheck.card.suit)}
                           </div>
-                       </motion.div>
+                      </motion.div>
                     )}
-                 </AnimatePresence>
-                 
-                 {isCheckCard && lastDiscardedCard!.suit === Suit.SPADES && lastDiscardedCard!.rank! >= 2 && lastDiscardedCard!.rank! <= 9 && (
-                    <motion.span initial={{ opacity: 0, scale: 0.5 }} animate={{ opacity: 1, scale: 1 }} className="text-red-500 font-black text-sm tracking-widest drop-shadow-[0_0_5px_rgba(239,68,68,0.8)]">ВЗРЫВ!</motion.span>
-                 )}
-                 {isCheckCard && lastDiscardedCard!.suit === Suit.HEARTS && (
-                    <motion.span initial={{ opacity: 0, scale: 0.5 }} animate={{ opacity: 1, scale: 1 }} className="text-green-500 font-black text-sm tracking-widest drop-shadow-[0_0_5px_rgba(34,197,94,0.8)]">СВОБОДА!</motion.span>
-                 )}
+                </AnimatePresence>
+                
+                {activeCheck?.result === 'EXPLOSION' && (
+                    <motion.span initial={{ opacity: 0, scale: 0.5 }} animate={{ opacity: 1, scale: 1.1 }} className="text-red-500 font-black text-sm tracking-widest drop-shadow-[0_0_8px_rgba(239,68,68,0.9)]">ВЗРЫВ!</motion.span>
+                )}
+                {activeCheck?.result === 'FREE' && (
+                    <motion.span initial={{ opacity: 0, scale: 0.5 }} animate={{ opacity: 1, scale: 1.1 }} className="text-green-500 font-black text-sm tracking-widest drop-shadow-[0_0_8px_rgba(34,197,94,0.9)]">СВОБОДА!</motion.span>
+                )}
+                {activeCheck?.result === 'FAILED' && (
+                    <motion.span initial={{ opacity: 0, scale: 0.5 }} animate={{ opacity: 1, scale: 1.1 }} className="text-yellow-500 font-black text-xs tracking-wider drop-shadow-[0_0_6px_rgba(234,179,8,0.8)]">КАРАНТИН</motion.span>
+                )}
               </div>
 
               {/* Зона Сброса */}

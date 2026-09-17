@@ -5,7 +5,13 @@
     "outDir": "./dist",
     "composite": true,
     "module": "NodeNext",
-    "moduleResolution": "NodeNext"
+    "moduleResolution": "NodeNext",
+    "baseUrl": ".",
+    "paths": {
+      "@cyberbang/shared/types": ["../shared/types/index.ts"],
+      "@cyberbang/shared/localization": ["../shared/localization.ts"],
+      "@cyberbang/shared/*": ["../shared/*"]
+    }
   },
   "references": [{ "path": "../shared" }],
   "include": ["src/**/*.ts"],
