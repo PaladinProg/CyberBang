@@ -26,13 +26,13 @@ function generateDeck(): CardInstance[] {
 
   //Боевые действия
   addCards(CardType.PING, 25);
-  addCards(CardType.MISS, 10);
+  addCards(CardType.MISS, 10); //TODO подбалансить кол-во карт
   addCards(CardType.STIMULANT, 5);
   addCards(CardType.SERVER_ROOM, 2);
   addCards(CardType.FLAK_TURRET, 1);
   addCards(CardType.DDOS, 2);
   addCards(CardType.DUEL, 2);
-  addCards(CardType.PANIC, 4);
+  addCards(CardType.VPN, 4);
   addCards(CardType.SOCIAL_ENGINEERING, 3);
   addCards(CardType.DATA_STREAM, 2);
   addCards(CardType.DEEP_BACKDOOR, 1);
@@ -46,7 +46,7 @@ function generateDeck(): CardInstance[] {
   addCards(CardType.GHOST_PROTOCOL, 2);
   addCards(CardType.SNIPER_SCOPE, 2);
   addCards(CardType.PROXY_SERVER, 2);
-  addCards(CardType.FIREWALL, 2);
+  addCards(CardType.QUARANTINE, 2);
   addCards(CardType.LOGIC_BOMB, 2);
 
   return shuffle(deck);

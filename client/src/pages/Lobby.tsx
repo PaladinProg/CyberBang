@@ -14,10 +14,11 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
+  reconnectToRoom,
 } from '@/components/ui/card';
 
 export function Lobby() {
-  const { createRoom, joinRoom, leaveRoom, startGame, isConnected } = useSocket();
+  const { createRoom, joinRoom, leaveRoom, startGame, isConnected, reconnectToRoom } = useSocket();
 
   // Состояние лобби
   const rooms = useLobbyStore((s) => s.rooms);
@@ -60,11 +61,24 @@ export function Lobby() {
 
   const handleJoin = (roomId: string) => {
     joinRoom({ roomId, nickname });
+    localStorage.setItem('cyberbang_roomId', roomId);
+    localStorage.setItem('cyberbang_nickname', nickname);
   };
 
   const handleLeave = () => {
-    if (currentRoomId) {
-      leaveRoom({ roomId: currentRoomId });
+    localStorage.removeItem('cyberbang_roomId');
+    localStorage.removeItem('cyberbang_nickname');
+    leaveRoom({ roomId: currentRoomId });
+  };
+
+  const savedRoomId = localStorage.getItem('cyberbang_roomId');
+  const savedNickname = localStorage.getItem('cyberbang_nickname');
+  const canReconnect = savedRoomId && savedNickname && isConnected;
+
+  const handleReconnect = () => {
+    if (savedRoomId && savedNickname) {
+      console.log('[Lobby] Attempting manual reconnect');
+      reconnectToRoom(savedRoomId, savedNickname);
     }
   };
 
@@ -101,6 +115,36 @@ export function Lobby() {
           className="rounded-md border border-cyber-orange/60 bg-cyber-orange/10 px-4 py-3 text-sm text-cyber-orange"
         >
           {LOC.ERRORS[lastError]}
+        </motion.div>
+      )}
+
+      {/*Кнопка реконнекта */}
+      {canReconnect && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
+          <Card className="cyber-border border-green-500/50 shadow-[0_0_15px_rgba(34,197,94,0.3)]">
+            <CardContent className="flex flex-col gap-3 p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-display font-semibold text-green-400">
+                    Найдена активная сессия
+                  </p>
+                  <p className="text-xs text-cyber-muted mt-1">
+                    Комната: {savedRoomId?.slice(0, 8)}... | Ник: {savedNickname}
+                  </p>
+                </div>
+                <Button
+                  onClick={handleReconnect}
+                  className="bg-green-600 hover:bg-green-500 text-white font-bold border border-green-400 shadow-[0_0_10px_rgba(34,197,94,0.5)]"
+                >
+                  <DoorOpen className="h-4 w-4 mr-2" />
+                  ПЕРЕПОДКЛЮЧИТЬСЯ
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
         </motion.div>
       )}
 

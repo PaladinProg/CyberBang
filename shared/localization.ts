@@ -43,7 +43,7 @@ export const LOC = {
     [CardType.FLAK_TURRET]: 'ЗЕНИТНАЯ ТУРЕЛЬ',
     [CardType.DDOS]: 'DDoS-АТАКА',
     [CardType.DUEL]: 'КИБЕР-ДУЭЛЬ',
-    [CardType.PANIC]: 'ПАНИКА!',
+    [CardType.VPN]: 'ВПН!',
     [CardType.SOCIAL_ENGINEERING]: 'СОЦ. ИНЖЕНЕРИЯ',
     [CardType.DATA_STREAM]: 'ПОТОК ДАННЫХ',
     [CardType.DEEP_BACKDOOR]: 'ГЛУБОКИЙ БЭКДОР',
@@ -56,7 +56,7 @@ export const LOC = {
     [CardType.GHOST_PROTOCOL]: "ПРОТОКОЛ 'ПРИЗРАК'",
     [CardType.SNIPER_SCOPE]: 'СНАЙПЕРСКИЙ МОДУЛЬ',
     [CardType.PROXY_SERVER]: 'ПРОКСИ-СЕРВЕР',
-    [CardType.FIREWALL]: 'КАРАНТИН',
+    [CardType.QUARANTINE]: 'КАРАНТИН',
     [CardType.LOGIC_BOMB]: 'ЛОГИЧЕСКАЯ БОМБА',
   } satisfies Record<CardType, string>,
 
@@ -69,7 +69,7 @@ export const LOC = {
     [CardType.FLAK_TURRET]: 'Все получают урон',
     [CardType.DDOS]: 'Сбрось ПИНГ или получи урон',
     [CardType.DUEL]: 'Поединок до первого сброса ПИНГа',
-    [CardType.PANIC]: 'Украсть карту на дист. 1',
+    [CardType.VPN]: 'Украсть карту на дист. 1',
     [CardType.SOCIAL_ENGINEERING]: 'Заставить сбросить любую карту',
     [CardType.DATA_STREAM]: '+2 карты',
     [CardType.DEEP_BACKDOOR]: '+3 карты',
@@ -82,7 +82,7 @@ export const LOC = {
     [CardType.GHOST_PROTOCOL]: '+1 к дистанции до тебя',
     [CardType.SNIPER_SCOPE]: '-1 к дистанции от тебя',
     [CardType.PROXY_SERVER]: 'Проверка на Черви при попадании',
-    [CardType.FIREWALL]: 'Пропуск хода, если не Черви',
+    [CardType.QUARANTINE]: 'Пропуск хода, если не Черви',
     [CardType.LOGIC_BOMB]: 'Взрыв на Пики 2-9',
   } satisfies Record<CardType, string>,
 
@@ -139,6 +139,7 @@ export const LOC = {
     [TurnPhase.UPLOAD]: 'Набор',
     [TurnPhase.EXECUTE]: 'Розыгрыш',
     [TurnPhase.PURGE]: 'Сброс',
+    [TurnPhase.MARKET]: 'Рынок',
   } satisfies Record<TurnPhase, string>,
 
   /** Статусы партии */
@@ -189,6 +190,7 @@ export const LOC = {
     [SocketErrorCode.NOT_ENOUGH_PLAYERS]: 'Минимум 4 игрока для старта',
     [SocketErrorCode.INTERNAL_ERROR]: 'Внутренняя ошибка сервера',
     [SocketErrorCode.INVALID_ACTION]: 'Недопустимое действие',
+    [SocketErrorCode.RECONNECT_FAILED]: 'Не удалось переподключиться к игре',
   } satisfies Record<SocketErrorCode, string>,
 } as const;
 

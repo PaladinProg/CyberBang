@@ -23,7 +23,7 @@ export enum CardType {
   FLAK_TURRET = 'FLAK_TURRET',
   DDOS = 'DDOS',
   DUEL = 'DUEL',
-  PANIC = 'PANIC',
+  VPN = 'VPN',
   SOCIAL_ENGINEERING = 'SOCIAL_ENGINEERING',
   DATA_STREAM = 'DATA_STREAM',
   DEEP_BACKDOOR = 'DEEP_BACKDOOR',
@@ -39,7 +39,7 @@ export enum CardType {
   SNIPER_SCOPE = 'SNIPER_SCOPE',
   PROXY_SERVER = 'PROXY_SERVER',
   // Контроль
-  FIREWALL = 'FIREWALL',
+  QUARANTINE = 'QUARANTINE',
   LOGIC_BOMB = 'LOGIC_BOMB',
 }
 
@@ -105,6 +105,7 @@ export enum TurnPhase {
   UPLOAD = 'UPLOAD',
   EXECUTE = 'EXECUTE',
   PURGE = 'PURGE',
+  MARKET = 'MARKET',
 }
 
 /** Статус комнаты в лобби (до и во время игры) */
@@ -176,6 +177,7 @@ export const GAME_EVENTS = {
   GAME_STARTED: 'gameStarted',
   GAME_STATE_UPDATE: 'gameStateUpdate',
   REQUEST_STATE: 'requestState',
+  PICK_MARKET_CARD: 'pickMarketCard',
 } as const;
 
 /** Payload для запуска игры */
@@ -186,6 +188,11 @@ export interface StartGamePayload {
 /** Payload при успешном старте игры */
 export interface GameStartedPayload {
   gameState: GameState;
+}
+
+// Payload для выбора карты с рынка
+export interface PickMarketCardPayload {
+  cardId: string;
 }
 
 // ─── Карты ─────────────────────────────────────────────────────────────────
@@ -228,9 +235,18 @@ export interface PlayerState {
   isConnected: boolean;
   /** Сколько карт Ping! сыграно в текущем ходу (лимит 1, кроме исключений) */
   pingsPlayedThisTurn: number;
+  isDying?: boolean;
 }
 
 // ─── Игра и комната ────────────────────────────────────────────────────────
+
+/** Структура отложенной атаки (для механик защиты Miss/Ping/Barrel) */
+export interface PendingAttack {
+  amount: number;           // Сколько урона нанесет атака
+  sourceId: string;         // Кто атакует
+  requiredDefense?: CardType; // Какая карта нужна для защиты (MISS или PING). Если undefined - обычная защита Miss
+  barrelChecked?: boolean;    // Флаг: проверялся ли уже Barrel при этой атаке
+}
 
 /** Полное состояние активной партии */
 export interface GameState {
@@ -246,7 +262,18 @@ export interface GameState {
   turnNumber: number;
   /** Роли-победители; null пока игра не завершена */
   winnerRoles: RoleType[] | null;
-  pendingAttacks?: Map<string, Array<{ amount: number; sourceId: string }>>;
+
+  marketCards?: CardInstance[]; // Карты, выложенные на стол
+  marketPickerIndex?: number;   // Индекс игрока в списке alivePlayers, который сейчас выбирает
+  marketInitiatorId?: string;   // ID игрока, который сыграл карту (чтобы вернуть ход ему)
+  
+  pendingAttacks?: Map<string, PendingAttack[]>;
+
+  pendingSocialEngineering?: Map<string, {
+    sourceId: string;
+    cardId: string;
+    timestamp: number;
+  }>;
 }
 
 /** Состояние комнаты в памяти сервера (лобби + опционально активная игра) */
@@ -315,6 +342,7 @@ export enum SocketErrorCode {
   NOT_ENOUGH_PLAYERS = 'NOT_ENOUGH_PLAYERS',
   INTERNAL_ERROR = 'INTERNAL_ERROR',
   INVALID_ACTION = 'INVALID_ACTION',
+  RECONNECT_FAILED = 'RECONNECT_FAILED',
 }
 
 /** Имена Socket.IO-событий (единый контракт client ↔ server) */
