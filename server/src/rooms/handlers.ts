@@ -332,44 +332,57 @@ function handleReconnectToRoom(
   payload: { roomId: string; nickname: string }
 ) {
   const { roomId, nickname } = payload;
-  console.log(`[Server] Reconnection attempt: ${nickname} -> ${roomId}`);
-
+  console.log(`[Server] Попытка переподключения: ${nickname} -> ${roomId}`);
   const room = store.getRoom(roomId);
-  
+
   if (!room) {
-    console.log(`[Server] Room not found: ${roomId}`);
-    socket.emit('reconnectResult', { success: false, reason: 'Room not found' });
+    socket.emit('reconnectResult', { success: false, reason: 'Комната не найдена' });
     return;
   }
 
   if (room.status !== 'PLAYING' || !room.game) {
-    console.log(`[Server] Game not active in room: ${roomId}`);
-    socket.emit('reconnectResult', { success: false, reason: 'Game not active' });
+    socket.emit('reconnectResult', { success: false, reason: 'Игра не активна' });
     return;
   }
-  // Проверяем, был ли игрок в этой комнате (по никнейму)
+
   const playerInGame = room.game.players.find(
-    p => p.nickname === nickname && p.isAlive
+    (p) => p.nickname === nickname && p.isAlive
   );
 
   if (!playerInGame) {
-    console.log(`[Server] Player not found in game: ${nickname}`);
-    socket.emit('reconnectResult', { success: false, reason: 'Player not found' });
+    socket.emit('reconnectResult', { success: false, reason: 'Игрок не найден в игре' });
     return;
   }
 
-  // Обновляем сессию и добавляем в комнату
-  store.upsertSession(socket.id, nickname);
-  if (!room.playerIds.includes(socket.id)) {
-    store.addPlayer(roomId, socket.id);
+  const oldSocketId = playerInGame.id;
+  const newSocketId = socket.id;
+
+  // 1. Обновляем ID игрока в объекте игры на новый socket.id
+  playerInGame.id = newSocketId;
+  playerInGame.isConnected = true;
+
+  if (room.game.currentTurnPlayerId === oldSocketId) {
+    room.game.currentTurnPlayerId = newSocketId;
   }
-  
+
+  // Обновляем pendingAttacks, если были
+  if (room.game.pendingAttacks && room.game.pendingAttacks.has(oldSocketId)) {
+    const attacks = room.game.pendingAttacks.get(oldSocketId)!;
+    room.game.pendingAttacks.delete(oldSocketId);
+    room.game.pendingAttacks.set(newSocketId, attacks);
+  }
+
+  // 2. Обновляем сессию и список комнат
+  store.upsertSession(newSocketId, nickname);
+  room.playerIds = room.playerIds.map((id) => (id === oldSocketId ? newSocketId : id));
+  if (room.hostId === oldSocketId) room.hostId = newSocketId;
+
   void socket.join(`room:${roomId}`);
 
-  // Отправляем состояние игры
+  // 3. Отправляем сериализованное состояние
   const safeGameState = {
     ...room.game,
-    pendingAttacks: Object.fromEntries(room.game.pendingAttacks || [])
+    pendingAttacks: Object.fromEntries(room.game.pendingAttacks || []),
   };
 
   socket.emit('reconnectResult', {
@@ -377,7 +390,10 @@ function handleReconnectToRoom(
     gameState: safeGameState,
   });
 
-  console.log(`[Server] ✅ Player ${nickname} reconnected to room ${roomId}`);
+  // Уведомляем остальных об обновлении сокета игрока
+  io.to(`room:${roomId}`).emit(GAME_EVENTS.GAME_STATE_UPDATE, { gameState: safeGameState });
+
+  console.log(`[Server] ✅ Игрок ${nickname} успешно переподключен (ID: ${oldSocketId} -> ${newSocketId})`);
 }
 
 // ФУНКЦИЯ ОБРАБОТКИ ВЫБОРА КАРТЫ С РЫНКА
