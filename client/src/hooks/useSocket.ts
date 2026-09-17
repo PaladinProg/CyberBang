@@ -20,14 +20,20 @@ const SERVER_URL = '/';
 const socket = io(SERVER_URL, {
   transports: ['websocket', 'polling'],
   autoConnect: true,
+  reconnection: true, // Включаем встроенный реконнект Socket.IO
+  reconnectionAttempts: 5,
+  reconnectionDelay: 1000,
 });
 
 export interface UseSocketReturn {
   isConnected: boolean;
+  socket: Socket;
   createRoom: (payload: CreateRoomPayload) => void;
   joinRoom: (payload: JoinRoomPayload) => void;
   leaveRoom: (payload: LeaveRoomPayload) => void;
-  startGame: (roomId: string) => void;
+  endTurn: () => void;
+  playCard: (cardId: string, targetId?: string) => void;
+  reconnectToRoom: (roomId: string, nickname: string) => void;
 }
 
 export function useSocket(): UseSocketReturn {
@@ -46,14 +52,6 @@ export function useSocket(): UseSocketReturn {
       console.log('[Socket] CONNECTED! ID:', socket.id);
       setConnectionStatus('connected');
       setSocketId(socket.id);
-
-      const lastRoomId = useLobbyStore.getState().currentRoomId;
-      
-      if (lastRoomId) {
-        console.log('[Socket] Reconnected, requesting state for room:', lastRoomId);
-        // Отправляем запрос на сервер
-        socket.emit(GAME_EVENTS.REQUEST_STATE, { roomId: lastRoomId });
-      }
     };
 
     const handleDisconnect = () => {
@@ -87,6 +85,20 @@ export function useSocket(): UseSocketReturn {
       setGameState(data.gameState);
     };
 
+    const handleReconnectResult = (data: { success: boolean; gameState?: any; reason?: string }) => {
+      if (data.success && data.gameState) {
+        console.log('[Socket] Reconnection successful!');
+        setGameState(data.gameState);
+        setCurrentRoomId(data.gameState.roomId); // Синхронизируем стор
+      } else {
+        console.warn('[Socket] Reconnection failed:', data.reason);
+        // Очистка, если комната удалена или игра закончилась
+        localStorage.removeItem('cyberbang_roomId');
+        localStorage.removeItem('cyberbang_nickname');
+        setCurrentRoomId(null);
+        setGameState(null);
+      }
+    };
 
     socket.on('connect', handleConnect);
     socket.on('disconnect', handleDisconnect);
@@ -95,6 +107,7 @@ export function useSocket(): UseSocketReturn {
     socket.on(SOCKET_EVENTS.SOCKET_ERROR, handleSocketError);
     socket.on(GAME_EVENTS.GAME_STARTED, handleGameStarted);
     socket.on(GAME_EVENTS.GAME_STATE_UPDATE, handleGameStateUpdate);
+    socket.on('reconnectResult', handleReconnectResult);
 
     // Инициализация статуса при монтировании
     if (socket.connected) {
@@ -111,6 +124,7 @@ export function useSocket(): UseSocketReturn {
       socket.off(SOCKET_EVENTS.SOCKET_ERROR, handleSocketError);
       socket.off(GAME_EVENTS.GAME_STARTED, handleGameStarted);
       socket.off(GAME_EVENTS.GAME_STATE_UPDATE, handleGameStateUpdate);
+      socket.off('reconnectResult', handleReconnectResult);
     };
   }, [setRooms, setCurrentRoomId, setConnectionStatus, setError, setSocketId, setGameState, setConnectionStatus, setSocketId]);
 
@@ -142,6 +156,12 @@ export function useSocket(): UseSocketReturn {
     socket.emit('playCard', { cardId, targetId });
   }, []);
 
+  const reconnectToRoom = useCallback((roomId: string, nickname: string) => {
+    console.log('[Socket] Manual reconnect attempt:', { roomId, nickname });
+    setError(null);
+    socket.emit('reconnectToRoom', { roomId, nickname });
+  }, [setError]);
+
   return {
     isConnected: connectionStatus === 'connected',
     createRoom,
@@ -151,5 +171,6 @@ export function useSocket(): UseSocketReturn {
     endTurn, 
     playCard,
     socket,
+    reconnectToRoom,
   };
 }
