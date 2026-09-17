@@ -50,7 +50,3 @@ CyberBang/
 | `CLIENT_URL` | server (CORS) | `http://localhost:5173` |
 | `VITE_SERVER_URL` | client | `http://localhost:3001` |
 
-npm run typecheck    # Проверка типов во всех пакетах
-npm run build:shared # Сборка shared (нужна перед server)
-npm run build        # Полная production-сборка
-```
