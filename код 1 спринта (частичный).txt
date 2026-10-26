@@ -1,0 +1,930 @@
+shared/localization.ts
+/**
+ * Словарь локализации Cyber-Bang (RU по умолчанию).
+ *
+ * Архитектура Bilingual (EN/RU):
+ * - В коде, enums и серверной логике — только TECH_KEYS (RoleType, CardType, …).
+ * - В React UI — ТОЛЬКО строки из этого файла: LOC.CARD_NAMES[CardType.PING].
+ * - Никаких русских строк напрямую в JSX.
+ */
+
+import {
+  CardEffect,
+  CardType,
+  CharacterId,
+  GamePhase,
+  RoleType,
+  RoomStatus,
+  SocketErrorCode,
+  TurnPhase,
+} from './types/index.js';
+
+/** Локализованная строка с опциональным описанием для tooltip */
+export interface LocalizedEntry {
+  name: string;
+  description?: string;
+}
+
+/** Корневой объект локализации — единственный источник русских строк UI */
+export const LOC = {
+  /** Названия ролей */
+  ROLE_NAMES: {
+    [RoleType.ADMIN]: 'Системный Администратор',
+    [RoleType.DEPUTY]: 'Корпоративный Агент',
+    [RoleType.HACKER]: 'Хакер',
+    [RoleType.CYBERPUNK]: 'Киберпсих',
+  } satisfies Record<RoleType, string>,
+
+  /** Краткие названия карт (для кнопок, руки, лога) */
+  CARD_NAMES: {
+    [CardType.PING]: 'ПИНГ!',
+    [CardType.MISS]: 'ФАЙРВОЛЛ',
+    [CardType.STIMULANT]: 'СТИМУЛЯНТ',
+    [CardType.SERVER_ROOM]: 'СЕРВЕРНАЯ',
+    [CardType.FLAK_TURRET]: 'ЗЕНИТНАЯ ТУРЕЛЬ',
+    [CardType.DDOS]: 'DDoS-АТАКА',
+    [CardType.DUEL]: 'КИБЕР-ДУЭЛЬ',
+    [CardType.PANIC]: 'ПАНИКА!',
+    [CardType.SOCIAL_ENGINEERING]: 'СОЦ. ИНЖЕНЕРИЯ',
+    [CardType.DATA_STREAM]: 'ПОТОК ДАННЫХ',
+    [CardType.DEEP_BACKDOOR]: 'ГЛУБОКИЙ БЭКДОР',
+    [CardType.BLACK_MARKET]: 'ЧЁРНЫЙ РЫНОК',
+    [CardType.PISTOL_EXE]: 'Пистолет.exe',
+    [CardType.SHORT_CIRCUIT]: 'Короткое замыкание',
+    [CardType.REMOTE_SHELL]: 'Удаленный шелл',
+    [CardType.LONG_LINK]: 'Дальняя связь',
+    [CardType.VOLCANIC_IMPLANT]: "Имплант 'Вулкан'",
+    [CardType.GHOST_PROTOCOL]: "ПРОТОКОЛ 'ПРИЗРАК'",
+    [CardType.SNIPER_SCOPE]: 'СНАЙПЕРСКИЙ МОДУЛЬ',
+    [CardType.PROXY_SERVER]: 'ПРОКСИ-СЕРВЕР',
+    [CardType.FIREWALL]: 'КАРАНТИН',
+    [CardType.LOGIC_BOMB]: 'ЛОГИЧЕСКАЯ БОМБА',
+  } satisfies Record<CardType, string>,
+
+  /** Описания карт для tooltip / модальных окон */
+  CARD_DESCRIPTIONS: {
+    [CardType.PING]: 'Атака на дистанции',
+    [CardType.MISS]: 'Отмена попадания',
+    [CardType.STIMULANT]: '+1 HP',
+    [CardType.SERVER_ROOM]: 'Все +1 HP',
+    [CardType.FLAK_TURRET]: 'Все получают урон',
+    [CardType.DDOS]: 'Сбрось ПИНГ или получи урон',
+    [CardType.DUEL]: 'Поединок до первого сброса ПИНГа',
+    [CardType.PANIC]: 'Украсть карту на дист. 1',
+    [CardType.SOCIAL_ENGINEERING]: 'Заставить сбросить любую карту',
+    [CardType.DATA_STREAM]: '+2 карты',
+    [CardType.DEEP_BACKDOOR]: '+3 карты',
+    [CardType.BLACK_MARKET]: 'Распределение карт',
+    [CardType.PISTOL_EXE]: 'Базовое, дист. 1',
+    [CardType.SHORT_CIRCUIT]: 'Дист. 2',
+    [CardType.REMOTE_SHELL]: 'Дист. 3',
+    [CardType.LONG_LINK]: 'Дист. 4',
+    [CardType.VOLCANIC_IMPLANT]: 'Бесконечные ПИНГи на дист. 1',
+    [CardType.GHOST_PROTOCOL]: '+1 к дистанции до тебя',
+    [CardType.SNIPER_SCOPE]: '-1 к дистанции от тебя',
+    [CardType.PROXY_SERVER]: 'Проверка на Черви при попадании',
+    [CardType.FIREWALL]: 'Пропуск хода, если не Черви',
+    [CardType.LOGIC_BOMB]: 'Взрыв на Пики 2-9',
+  } satisfies Record<CardType, string>,
+
+  /** Названия персонажей */
+  CHARACTER_NAMES: {
+    [CharacterId.NET_RUNNER]: 'Нетраннер',
+    [CharacterId.GLITCH_CODER]: 'Дебаггер',
+    [CharacterId.CORP_LIQUIDATOR]: 'Ликвидатор',
+    [CharacterId.BURNER]: 'Сжигатель',
+    [CharacterId.BLACK_HAT]: 'Чёрная шляпа',
+    [CharacterId.AUTO_LOADER]: 'Автозагрузчик',
+    [CharacterId.REAPER]: 'Рипер',
+    [CharacterId.ROGUE_AI]: 'Отказавшийся ИИ',
+    [CharacterId.SPAM_BOT]: 'Спам-бот',
+    [CharacterId.PATIENT_ZERO]: 'Нулевой пациент',
+    [CharacterId.ZERO_COOL]: 'Камчатка',
+    [CharacterId.NULL_ENTITY]: 'Нулевая сущность',
+    [CharacterId.CACHE_HIT]: 'Мусорщик',
+    [CharacterId.STREET_RAT]: 'Уличный крыс',
+  } satisfies Record<CharacterId, string>,
+
+  /** Описания способностей персонажей */
+  CHARACTER_DESCRIPTIONS: {
+    [CharacterId.NET_RUNNER]: 'Берет карту с руки соседа или из колоды',
+    [CharacterId.GLITCH_CODER]: '2 шанса при проверке',
+    [CharacterId.CORP_LIQUIDATOR]: 'Забирает карты убитых',
+    [CharacterId.BURNER]: '+1 карта при потере HP',
+    [CharacterId.BLACK_HAT]: 'Крадет карту за полученный урон',
+    [CharacterId.AUTO_LOADER]: '+1 карта при пустой руке',
+    [CharacterId.REAPER]: '2 карты = +1 HP',
+    [CharacterId.ROGUE_AI]: 'ПИНГ вместо ФАЙРВОЛЛА и наоборот',
+    [CharacterId.SPAM_BOT]: 'Без лимита ПИНГов',
+    [CharacterId.PATIENT_ZERO]: 'Встроенный Призрак',
+    [CharacterId.ZERO_COOL]: 'Встроенный Снайпер',
+    [CharacterId.NULL_ENTITY]: 'Встроенный Прокси',
+    [CharacterId.CACHE_HIT]: 'Берет из сброса или колоды',
+    [CharacterId.STREET_RAT]: '3 карты, 1 возвращает на верх колоды',
+  } satisfies Record<CharacterId, string>,
+
+  /** Названия типов эффектов (для логов / отладки UI) */
+  EFFECT_NAMES: {
+    [CardEffect.DAMAGE]: 'Урон',
+    [CardEffect.HEAL]: 'Лечение',
+    [CardEffect.DRAW]: 'Взять карты',
+    [CardEffect.DISCARD]: 'Сброс',
+    [CardEffect.STEAL]: 'Кража',
+    [CardEffect.CHECK]: 'Проверка',
+    [CardEffect.SKIP_TURN]: 'Пропуск хода',
+    [CardEffect.EXPLOSION]: 'Взрыв',
+  } satisfies Record<CardEffect, string>,
+
+  /** Фазы хода */
+  TURN_PHASE_NAMES: {
+    [TurnPhase.UPLOAD]: 'Набор',
+    [TurnPhase.EXECUTE]: 'Розыгрыш',
+    [TurnPhase.PURGE]: 'Сброс',
+  } satisfies Record<TurnPhase, string>,
+
+  /** Статусы партии */
+  GAME_PHASE_NAMES: {
+    [GamePhase.LOBBY]: 'Лобби',
+    [GamePhase.PLAYING]: 'Игра',
+    [GamePhase.FINISHED]: 'Завершена',
+  } satisfies Record<GamePhase, string>,
+
+  /** Статусы комнаты */
+  ROOM_STATUS_NAMES: {
+    [RoomStatus.WAITING]: 'Ожидание',
+    [RoomStatus.PLAYING]: 'Идёт игра',
+  } satisfies Record<RoomStatus, string>,
+
+  /** Общие строки UI (лобби и навигация — Спринт 1+) */
+  UI: {
+    APP_TITLE: 'Cyber-Bang',
+    LOBBY_TITLE: 'Лобби',
+    CREATE_ROOM: 'Создать комнату',
+    JOIN_ROOM: 'Войти',
+    LEAVE_ROOM: 'Выйти',
+    ROOM_NAME: 'Название комнаты',
+    NICKNAME: 'Никнейм',
+    PLAYERS: 'Игроки',
+    NO_ROOMS: 'Комнат пока нет — создай первую!',
+    CONNECTING: 'Подключение к серверу…',
+    CONNECTED: 'Подключено',
+    DISCONNECTED: 'Соединение потеряно',
+    ERROR: 'Ошибка',
+    IN_ROOM: 'Вы в комнате',
+    MAX_PLAYERS: 'Макс. игроков',
+    STATUS: 'Статус',
+    REFRESH: 'Обновить',
+  },
+
+  /** Сообщения об ошибках лобби (ключ = SocketErrorCode) */
+  ERRORS: {
+    [SocketErrorCode.ROOM_NOT_FOUND]: 'Комната не найдена',
+    [SocketErrorCode.ROOM_FULL]: 'Комната заполнена',
+    [SocketErrorCode.GAME_ALREADY_STARTED]: 'Игра уже началась',
+    [SocketErrorCode.INVALID_NICKNAME]: 'Никнейм: от 2 до 20 символов',
+    [SocketErrorCode.INVALID_ROOM_NAME]: 'Название комнаты: от 2 до 32 символов',
+    [SocketErrorCode.INVALID_MAX_PLAYERS]: 'Игроков должно быть от 4 до 7',
+    [SocketErrorCode.ALREADY_IN_ROOM]: 'Вы уже в комнате',
+    [SocketErrorCode.NOT_IN_ROOM]: 'Вы не в комнате',
+  } satisfies Record<SocketErrorCode, string>,
+} as const;
+
+export type Localization = typeof LOC;
+
+/** Хелпер: полная локализованная запись карты (имя + описание) */
+export function getCardLocalized(cardType: CardType): LocalizedEntry {
+  return {
+    name: LOC.CARD_NAMES[cardType],
+    description: LOC.CARD_DESCRIPTIONS[cardType],
+  };
+}
+
+/** Хелпер: полная локализованная запись персонажа */
+export function getCharacterLocalized(characterId: CharacterId): LocalizedEntry {
+  return {
+    name: LOC.CHARACTER_NAMES[characterId],
+    description: LOC.CHARACTER_DESCRIPTIONS[characterId],
+  };
+}
+
+shared/types/index.ts
+/**
+ * Общие типы Cyber-Bang.
+ * В коде — только английские TECH_KEYS (enums). Русский UI — через @cyberbang/shared/localization.
+ */
+
+// ─── Enums: роли, карты, персонажи, эффекты ───────────────────────────────
+
+/** Скрытые роли игроков (TECH_KEYS из GAME_RULES.md) */
+export enum RoleType {
+  ADMIN = 'ADMIN',
+  DEPUTY = 'DEPUTY',
+  HACKER = 'HACKER',
+  CYBERPUNK = 'CYBERPUNK',
+}
+
+/** Идентификаторы карт колоды (TECH_KEYS) */
+export enum CardType {
+  // Разовые действия
+  PING = 'PING',
+  MISS = 'MISS',
+  STIMULANT = 'STIMULANT',
+  SERVER_ROOM = 'SERVER_ROOM',
+  FLAK_TURRET = 'FLAK_TURRET',
+  DDOS = 'DDOS',
+  DUEL = 'DUEL',
+  PANIC = 'PANIC',
+  SOCIAL_ENGINEERING = 'SOCIAL_ENGINEERING',
+  DATA_STREAM = 'DATA_STREAM',
+  DEEP_BACKDOOR = 'DEEP_BACKDOOR',
+  BLACK_MARKET = 'BLACK_MARKET',
+  // Оружие / импланты
+  PISTOL_EXE = 'PISTOL_EXE',
+  SHORT_CIRCUIT = 'SHORT_CIRCUIT',
+  REMOTE_SHELL = 'REMOTE_SHELL',
+  LONG_LINK = 'LONG_LINK',
+  VOLCANIC_IMPLANT = 'VOLCANIC_IMPLANT',
+  // Постоянное снаряжение
+  GHOST_PROTOCOL = 'GHOST_PROTOCOL',
+  SNIPER_SCOPE = 'SNIPER_SCOPE',
+  PROXY_SERVER = 'PROXY_SERVER',
+  // Контроль
+  FIREWALL = 'FIREWALL',
+  LOGIC_BOMB = 'LOGIC_BOMB',
+}
+
+/** Идентификаторы персонажей (TECH_KEYS) */
+export enum CharacterId {
+  NET_RUNNER = 'NET_RUNNER',
+  GLITCH_CODER = 'GLITCH_CODER',
+  CORP_LIQUIDATOR = 'CORP_LIQUIDATOR',
+  BURNER = 'BURNER',
+  BLACK_HAT = 'BLACK_HAT',
+  AUTO_LOADER = 'AUTO_LOADER',
+  REAPER = 'REAPER',
+  ROGUE_AI = 'ROGUE_AI',
+  SPAM_BOT = 'SPAM_BOT',
+  PATIENT_ZERO = 'PATIENT_ZERO',
+  ZERO_COOL = 'ZERO_COOL',
+  NULL_ENTITY = 'NULL_ENTITY',
+  CACHE_HIT = 'CACHE_HIT',
+  STREET_RAT = 'STREET_RAT',
+}
+
+/** Типы игровых эффектов карт (TECH_KEYS) */
+export enum CardEffect {
+  DAMAGE = 'DAMAGE',
+  HEAL = 'HEAL',
+  DRAW = 'DRAW',
+  DISCARD = 'DISCARD',
+  STEAL = 'STEAL',
+  CHECK = 'CHECK',
+  SKIP_TURN = 'SKIP_TURN',
+  EXPLOSION = 'EXPLOSION',
+}
+
+/** Масти игральных карт (для проверок Proxy Server, Firewall, Logic Bomb) */
+export enum Suit {
+  HEARTS = 'HEARTS',
+  DIAMONDS = 'DIAMONDS',
+  CLUBS = 'CLUBS',
+  SPADES = 'SPADES',
+}
+
+/** Визуальная категория карты по правилам */
+export enum CardCategory {
+  /** Разовая карта (Brown Border) */
+  INSTANT = 'INSTANT',
+  /** Постоянная карта (Blue Border) */
+  PERMANENT = 'PERMANENT',
+  /** Оружие / имплант */
+  WEAPON = 'WEAPON',
+  /** Карта контроля (Firewall, Logic Bomb) */
+  CONTROL = 'CONTROL',
+}
+
+/** Глобальный статус партии */
+export enum GamePhase {
+  LOBBY = 'LOBBY',
+  PLAYING = 'PLAYING',
+  FINISHED = 'FINISHED',
+}
+
+/** Фазы хода: Upload → Execute → Purge */
+export enum TurnPhase {
+  UPLOAD = 'UPLOAD',
+  EXECUTE = 'EXECUTE',
+  PURGE = 'PURGE',
+}
+
+/** Статус комнаты в лобби (до и во время игры) */
+export enum RoomStatus {
+  WAITING = 'WAITING',
+  PLAYING = 'PLAYING',
+}
+
+// ─── Константы из правил ───────────────────────────────────────────────────
+
+export const MIN_PLAYERS = 4;
+export const MAX_PLAYERS = 7;
+
+/** Распределение ролей по количеству игроков (раздел 2.1 GAME_RULES) */
+export const ROLE_DISTRIBUTION: Readonly<
+  Record<number, Readonly<Partial<Record<RoleType, number>>>>
+> = {
+  4: { [RoleType.ADMIN]: 1, [RoleType.CYBERPUNK]: 1, [RoleType.HACKER]: 2 },
+  5: {
+    [RoleType.ADMIN]: 1,
+    [RoleType.DEPUTY]: 1,
+    [RoleType.CYBERPUNK]: 1,
+    [RoleType.HACKER]: 2,
+  },
+  6: {
+    [RoleType.ADMIN]: 1,
+    [RoleType.DEPUTY]: 1,
+    [RoleType.CYBERPUNK]: 1,
+    [RoleType.HACKER]: 3,
+  },
+  7: {
+    [RoleType.ADMIN]: 1,
+    [RoleType.DEPUTY]: 2,
+    [RoleType.CYBERPUNK]: 1,
+    [RoleType.HACKER]: 3,
+  },
+} as const;
+
+/** MAX_RANGE оружия (раздел 6.3 GAME_RULES) */
+export const WEAPON_MAX_RANGE: Readonly<Partial<Record<CardType, number>>> = {
+  [CardType.PISTOL_EXE]: 1,
+  [CardType.SHORT_CIRCUIT]: 2,
+  [CardType.REMOTE_SHELL]: 3,
+  [CardType.LONG_LINK]: 4,
+  [CardType.VOLCANIC_IMPLANT]: 1,
+} as const;
+
+// ─── Карты ─────────────────────────────────────────────────────────────────
+
+/** Ранг игральной карты: 2–10, валет (11), дама (12), король (13), туз (14) */
+export type CardRank = 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14;
+
+/** Экземпляр карты в колоде, на руке или на столе */
+export interface CardInstance {
+  /** Уникальный ID экземпляра в партии */
+  id: string;
+  type: CardType;
+  /** Масть и ранг — только для карт из колоды (не для PISTOL_EXE по умолчанию) */
+  suit?: Suit;
+  rank?: CardRank;
+}
+
+// ─── Игрок ─────────────────────────────────────────────────────────────────
+
+/** Состояние одного игрока за столом */
+export interface PlayerState {
+  id: string;
+  nickname: string;
+  /** Позиция за столом (0 = первый после Admin по часовой стрелке) */
+  seatIndex: number;
+  characterId: CharacterId | null;
+  /** Скрытая роль; null до раздачи */
+  role: RoleType | null;
+  /** Admin открыт сразу; остальные — после смерти или конца игры */
+  isRoleRevealed: boolean;
+  currentHp: number;
+  maxHp: number;
+  /** Карты на руке */
+  hand: CardInstance[];
+  /** Постоянные карты перед игроком (оружие, Ghost Protocol и т.д.) */
+  equipment: CardInstance[];
+  /** Карты контроля, сыгранные НА этого игрока (Firewall) */
+  controlCards: CardInstance[];
+  isAlive: boolean;
+  isConnected: boolean;
+  /** Сколько карт Ping! сыграно в текущем ходу (лимит 1, кроме исключений) */
+  pingsPlayedThisTurn: number;
+}
+
+// ─── Игра и комната ────────────────────────────────────────────────────────
+
+/** Полное состояние активной партии */
+export interface GameState {
+  roomId: string;
+  phase: GamePhase;
+  turnPhase: TurnPhase | null;
+  /** ID игрока, чей сейчас ход */
+  currentTurnPlayerId: string | null;
+  players: PlayerState[];
+  deck: CardInstance[];
+  discardPile: CardInstance[];
+  /** Номер текущего хода (Admin = 1) */
+  turnNumber: number;
+  /** Роли-победители; null пока игра не завершена */
+  winnerRoles: RoleType[] | null;
+}
+
+/** Состояние комнаты в памяти сервера (лобби + опционально активная игра) */
+export interface RoomState {
+  id: string;
+  name: string;
+  hostId: string;
+  maxPlayers: number;
+  status: RoomStatus;
+  /** Упорядоченный список ID подключённых игроков */
+  playerIds: string[];
+  /** Заполняется после старта партии (Спринт 2+) */
+  game: GameState | null;
+  createdAt: number;
+}
+
+/** Публичное представление комнаты для списка в лобби (без скрытых данных игры) */
+export interface RoomSummary {
+  id: string;
+  name: string;
+  hostId: string;
+  playerCount: number;
+  maxPlayers: number;
+  status: RoomStatus;
+}
+
+// ─── Socket-события (лобби, Спринт 1) ────────────────────────────────────
+
+export interface CreateRoomPayload {
+  roomName: string;
+  nickname: string;
+  maxPlayers?: number;
+}
+
+export interface JoinRoomPayload {
+  roomId: string;
+  nickname: string;
+}
+
+export interface LeaveRoomPayload {
+  roomId: string;
+}
+
+export interface RoomUpdatePayload {
+  rooms: RoomSummary[];
+  /** ID комнаты текущего игрока (только в персональном emit после create/join/leave) */
+  yourRoomId?: string | null;
+}
+
+export interface SocketErrorPayload {
+  code: SocketErrorCode;
+  message: string;
+}
+
+/** Коды ошибок лобби (EN — маппятся на RU в localization) */
+export enum SocketErrorCode {
+  ROOM_NOT_FOUND = 'ROOM_NOT_FOUND',
+  ROOM_FULL = 'ROOM_FULL',
+  GAME_ALREADY_STARTED = 'GAME_ALREADY_STARTED',
+  INVALID_NICKNAME = 'INVALID_NICKNAME',
+  INVALID_ROOM_NAME = 'INVALID_ROOM_NAME',
+  INVALID_MAX_PLAYERS = 'INVALID_MAX_PLAYERS',
+  ALREADY_IN_ROOM = 'ALREADY_IN_ROOM',
+  NOT_IN_ROOM = 'NOT_IN_ROOM',
+}
+
+/** Имена Socket.IO-событий (единый контракт client ↔ server) */
+export const SOCKET_EVENTS = {
+  CREATE_ROOM: 'createRoom',
+  JOIN_ROOM: 'joinRoom',
+  LEAVE_ROOM: 'leaveRoom',
+  ROOM_UPDATE: 'roomUpdate',
+  SOCKET_ERROR: 'socketError',
+} as const;
+
+export type SocketEventName = (typeof SOCKET_EVENTS)[keyof typeof SOCKET_EVENTS];
+
+// ─── Re-exports для удобства ───────────────────────────────────────────────
+
+export type { CardInstance as Card };
+
+server/src/rooms/handler.ts
+import type { Server, Socket } from 'socket.io';
+import {
+  CreateRoomPayload,
+  JoinRoomPayload,
+  LeaveRoomPayload,
+  RoomStatus,
+  SOCKET_EVENTS,
+  SocketErrorCode,
+} from '@cyberbang/shared/types';
+import {
+  makeSocketError,
+  normalizeMaxPlayers,
+  RoomStore,
+  validateNickname,
+  validateRoomName,
+} from './store.js';
+
+/** Рассылка списка комнат всем; актор получает персональный yourRoomId */
+function notifyRoomUpdate(
+  io: Server,
+  store: RoomStore,
+  actor?: Socket,
+  yourRoomId?: string | null,
+): void {
+  const rooms = store.getSummaries();
+
+  if (actor) {
+    actor.emit(SOCKET_EVENTS.ROOM_UPDATE, { rooms, yourRoomId });
+    actor.broadcast.emit(SOCKET_EVENTS.ROOM_UPDATE, { rooms });
+  } else {
+    io.emit(SOCKET_EVENTS.ROOM_UPDATE, { rooms });
+  }
+}
+
+/** Регистрация обработчиков лобби на Socket.IO */
+export function registerLobbyHandlers(io: Server, store: RoomStore): void {
+  io.on('connection', (socket: Socket) => {
+    socket.emit(SOCKET_EVENTS.ROOM_UPDATE, {
+      rooms: store.getSummaries(),
+      yourRoomId: store.getSession(socket.id)?.roomId ?? null,
+    });
+
+    socket.on(SOCKET_EVENTS.CREATE_ROOM, (payload: CreateRoomPayload) => {
+      handleCreateRoom(io, socket, store, payload);
+    });
+
+    socket.on(SOCKET_EVENTS.JOIN_ROOM, (payload: JoinRoomPayload) => {
+      handleJoinRoom(io, socket, store, payload);
+    });
+
+    socket.on(SOCKET_EVENTS.LEAVE_ROOM, (payload: LeaveRoomPayload) => {
+      handleLeaveRoom(io, socket, store, payload);
+    });
+
+    socket.on('disconnect', () => {
+      store.handleDisconnect(socket.id);
+      notifyRoomUpdate(io, store);
+    });
+  });
+}
+
+function roomChannel(roomId: string): string {
+  return `room:${roomId}`;
+}
+
+function emitError(socket: Socket, code: SocketErrorCode): void {
+  socket.emit(SOCKET_EVENTS.SOCKET_ERROR, makeSocketError(code));
+}
+
+function handleCreateRoom(
+  io: Server,
+  socket: Socket,
+  store: RoomStore,
+  payload: CreateRoomPayload,
+): void {
+  const nickname = payload.nickname?.trim() ?? '';
+  const roomName = payload.roomName?.trim() ?? '';
+
+  if (!validateNickname(nickname)) {
+    emitError(socket, SocketErrorCode.INVALID_NICKNAME);
+    return;
+  }
+  if (!validateRoomName(roomName)) {
+    emitError(socket, SocketErrorCode.INVALID_ROOM_NAME);
+    return;
+  }
+
+  const maxPlayers = normalizeMaxPlayers(payload.maxPlayers);
+  if (maxPlayers < 4 || maxPlayers > 7) {
+    emitError(socket, SocketErrorCode.INVALID_MAX_PLAYERS);
+    return;
+  }
+
+  const session = store.getSession(socket.id);
+  if (session?.roomId) {
+    emitError(socket, SocketErrorCode.ALREADY_IN_ROOM);
+    return;
+  }
+
+  store.upsertSession(socket.id, nickname);
+
+  const roomId = crypto.randomUUID();
+  store.createRoom(roomId, roomName, socket.id, maxPlayers);
+
+  void socket.join(roomChannel(roomId));
+  notifyRoomUpdate(io, store, socket, roomId);
+}
+
+function handleJoinRoom(
+  io: Server,
+  socket: Socket,
+  store: RoomStore,
+  payload: JoinRoomPayload,
+): void {
+  const nickname = payload.nickname?.trim() ?? '';
+  const roomId = payload.roomId;
+
+  if (!validateNickname(nickname)) {
+    emitError(socket, SocketErrorCode.INVALID_NICKNAME);
+    return;
+  }
+
+  const room = store.getRoom(roomId);
+  if (!room) {
+    emitError(socket, SocketErrorCode.ROOM_NOT_FOUND);
+    return;
+  }
+
+  if (room.status !== RoomStatus.WAITING) {
+    emitError(socket, SocketErrorCode.GAME_ALREADY_STARTED);
+    return;
+  }
+
+  if (room.playerIds.length >= room.maxPlayers && !room.playerIds.includes(socket.id)) {
+    emitError(socket, SocketErrorCode.ROOM_FULL);
+    return;
+  }
+
+  const session = store.getSession(socket.id);
+  if (session?.roomId && session.roomId !== roomId) {
+    emitError(socket, SocketErrorCode.ALREADY_IN_ROOM);
+    return;
+  }
+
+  store.upsertSession(socket.id, nickname);
+  store.addPlayer(roomId, socket.id);
+
+  void socket.join(roomChannel(roomId));
+  notifyRoomUpdate(io, store, socket, roomId);
+}
+
+function handleLeaveRoom(
+  io: Server,
+  socket: Socket,
+  store: RoomStore,
+  payload: LeaveRoomPayload,
+): void {
+  const session = store.getSession(socket.id);
+  if (!session?.roomId) {
+    emitError(socket, SocketErrorCode.NOT_IN_ROOM);
+    return;
+  }
+
+  const roomId = payload.roomId || session.roomId;
+  const room = store.getRoom(roomId);
+  if (!room) {
+    emitError(socket, SocketErrorCode.ROOM_NOT_FOUND);
+    return;
+  }
+
+  if (!room.playerIds.includes(socket.id)) {
+    emitError(socket, SocketErrorCode.NOT_IN_ROOM);
+    return;
+  }
+
+  store.removePlayer(roomId, socket.id);
+  void socket.leave(roomChannel(roomId));
+  notifyRoomUpdate(io, store, socket, null);
+}
+
+server/src/rooms/store.ts
+import {
+  MAX_PLAYERS,
+  MIN_PLAYERS,
+  RoomState,
+  RoomStatus,
+  RoomSummary,
+  SocketErrorCode,
+} from '@cyberbang/shared/types';
+
+/** Сессия подключённого игрока (socket.id → данные) */
+export interface PlayerSession {
+  socketId: string;
+  nickname: string;
+  roomId: string | null;
+}
+
+/** Хранилище комнат и сессий — только RAM, без БД */
+export class RoomStore {
+  readonly rooms = new Map<string, RoomState>();
+  readonly sessions = new Map<string, PlayerSession>();
+
+  /** Публичный список комнат для лобби */
+  getSummaries(): RoomSummary[] {
+    return [...this.rooms.values()]
+      .map((room) => ({
+        id: room.id,
+        name: room.name,
+        hostId: room.hostId,
+        playerCount: room.playerIds.length,
+        maxPlayers: room.maxPlayers,
+        status: room.status,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+  }
+
+  getSession(socketId: string): PlayerSession | undefined {
+    return this.sessions.get(socketId);
+  }
+
+  upsertSession(socketId: string, nickname: string): PlayerSession {
+    const existing = this.sessions.get(socketId);
+    if (existing) {
+      existing.nickname = nickname;
+      return existing;
+    }
+    const session: PlayerSession = { socketId, nickname, roomId: null };
+    this.sessions.set(socketId, session);
+    return session;
+  }
+
+  getRoom(roomId: string): RoomState | undefined {
+    return this.rooms.get(roomId);
+  }
+
+  /** Создание комнаты; хост автоматически добавляется в playerIds */
+  createRoom(
+    roomId: string,
+    name: string,
+    hostSocketId: string,
+    maxPlayers: number,
+  ): RoomState {
+    const room: RoomState = {
+      id: roomId,
+      name,
+      hostId: hostSocketId,
+      maxPlayers,
+      status: RoomStatus.WAITING,
+      playerIds: [hostSocketId],
+      game: null,
+      createdAt: Date.now(),
+    };
+    this.rooms.set(roomId, room);
+
+    const session = this.sessions.get(hostSocketId);
+    if (session) {
+      session.roomId = roomId;
+    }
+
+    return room;
+  }
+
+  /** Добавить игрока в комнату */
+  addPlayer(roomId: string, socketId: string): boolean {
+    const room = this.rooms.get(roomId);
+    if (!room) return false;
+    if (room.playerIds.includes(socketId)) return true;
+
+    room.playerIds.push(socketId);
+    const session = this.sessions.get(socketId);
+    if (session) {
+      session.roomId = roomId;
+    }
+    return true;
+  }
+
+  /** Удалить игрока из комнаты; пустая комната удаляется из Map */
+  removePlayer(roomId: string, socketId: string): RoomState | null {
+    const room = this.rooms.get(roomId);
+    if (!room) return null;
+
+    room.playerIds = room.playerIds.filter((id) => id !== socketId);
+
+    const session = this.sessions.get(socketId);
+    if (session) {
+      session.roomId = null;
+    }
+
+    if (room.playerIds.length === 0) {
+      this.rooms.delete(roomId);
+      return null;
+    }
+
+    // Передача хоста первому оставшемуся игроку
+    if (room.hostId === socketId) {
+      room.hostId = room.playerIds[0] ?? room.hostId;
+    }
+
+    return room;
+  }
+
+  /** Отключение сокета — выход из комнаты, если был в ней */
+  handleDisconnect(socketId: string): string | null {
+    const session = this.sessions.get(socketId);
+    this.sessions.delete(socketId);
+
+    if (!session?.roomId) return null;
+
+    const roomId = session.roomId;
+    this.removePlayer(roomId, socketId);
+    return roomId;
+  }
+}
+
+/** Валидация никнейма */
+export function validateNickname(nickname: string): boolean {
+  const trimmed = nickname.trim();
+  return trimmed.length >= 2 && trimmed.length <= 20;
+}
+
+/** Валидация названия комнаты */
+export function validateRoomName(name: string): boolean {
+  const trimmed = name.trim();
+  return trimmed.length >= 2 && trimmed.length <= 32;
+}
+
+/** Нормализация maxPlayers в диапазон 4–7 */
+export function normalizeMaxPlayers(value: number | undefined): number {
+  if (value === undefined || Number.isNaN(value)) {
+    return MAX_PLAYERS;
+  }
+  return Math.min(MAX_PLAYERS, Math.max(MIN_PLAYERS, Math.floor(value)));
+}
+
+/** Построить payload ошибки для клиента */
+export function makeSocketError(code: SocketErrorCode): {
+  code: SocketErrorCode;
+  message: string;
+} {
+  return { code, message: code };
+}
+
+server/src/index.ts
+import Fastify from 'fastify';
+import cors from '@fastify/cors';
+import { Server as SocketServer } from 'socket.io';
+import { registerLobbyHandlers } from './rooms/handlers.js';
+import { RoomStore } from './rooms/store.js';
+
+const PORT = Number(process.env.PORT ?? 3001);
+const CLIENT_ORIGIN = process.env.CLIENT_URL ?? 'http://localhost:5173';
+
+const store = new RoomStore();
+
+async function main(): Promise<void> {
+  const app = Fastify({ logger: true });
+
+  await app.register(cors, {
+    origin: CLIENT_ORIGIN,
+  });
+
+  app.get('/health', async () => ({ status: 'ok', rooms: store.rooms.size }));
+
+  const io = new SocketServer(app.server, {
+    cors: {
+      origin: CLIENT_ORIGIN,
+      methods: ['GET', 'POST'],
+    },
+  });
+
+  registerLobbyHandlers(io, store);
+
+  await app.listen({ port: PORT, host: '0.0.0.0' });
+  app.log.info(`Cyber-Bang server: http://localhost:${PORT}`);
+}
+
+main().catch((err: unknown) => {
+  console.error(err);
+  process.exit(1);
+});
+
+client/index.html
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cyber-Bang</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700&family=Rajdhani:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+
+
+client/vite.config.ts
+import path from 'node:path';
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+
+export default defineConfig({
+  plugins: [react()],
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src'),
+      '@cyberbang/shared': path.resolve(__dirname, '../shared'),
+    },
+  },
+  server: {
+    port: 5173,
+    proxy: {
+      '/socket.io': {
+        target: 'http://localhost:3001',
+        ws: true,
+      },
+    },
+  },
+});
+
