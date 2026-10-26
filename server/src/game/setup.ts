@@ -24,8 +24,6 @@ import { startTurn } from './engine.js';
 function generateDeck(): CardInstance[] {
   const deck: CardInstance[] = [];
   const suits: Suit[] = [Suit.HEARTS, Suit.DIAMONDS, Suit.CLUBS, Suit.SPADES];
-  let suitIndex = 0;
-
   let cardCounter = 0;
 
   const addCards = (
@@ -49,10 +47,9 @@ function generateDeck(): CardInstance[] {
       deck.push({
         id: uuidv4(),
         type,
-        suit: suits[suitIndex % 4],
-        rank: (2 + (suitIndex % 13)) as any,
+        suit, // Фикс: используем вычисленную масть
+        rank, // Фикс: используем вычисленный ранг
       });
-      suitIndex++;
 
       cardCounter++;
     }

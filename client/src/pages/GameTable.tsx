@@ -21,20 +21,23 @@ function getRankSymbol(rank?: CardRank): string {
   return rank.toString();
 }
 
-function getSuitSymbol(suit?: Suit): string {
-  switch (suit) {
-    case Suit.HEARTS: return '♥';
-    case Suit.DIAMONDS: return '♦';
-    case Suit.CLUBS: return '♣';
-    case Suit.SPADES: return '♠';
-    default: return '';
-  }
+function getSuitSymbol(suit?: Suit | string): string {
+  if (!suit) return '';
+  const s = String(suit).toUpperCase();
+  if (s === 'HEARTS' || s === '♥') return '♥';
+  if (s === 'DIAMONDS' || s === '♦') return '♦';
+  if (s === 'CLUBS' || s === '♣') return '♣';
+  if (s === 'SPADES' || s === '♠') return '♠';
+  return '';
 }
 
-// ЖЕСТКИЙ ФИКС ЦВЕТОВ: Используем конкретные hex-коды
-function getSuitColor(suit?: Suit): string {
-  if (suit === Suit.HEARTS || suit === Suit.DIAMONDS) return '#ff0000'; // Ярко-красный
-  return '#000000'; // Абсолютно черный
+function getSuitColor(suit?: Suit | string): string {
+  if (!suit) return '#000000';
+  const s = String(suit).toUpperCase();
+  if (s === 'HEARTS' || s === 'DIAMONDS' || s === '♥' || s === '♦') {
+    return '#ff0000'; // Красный
+  }
+  return '#000000'; // Черный
 }
 
 export function GameTable() {
@@ -49,19 +52,15 @@ export function GameTable() {
 
   const [showCriticalModal, setShowCriticalModal] = useState(false);
   const [showRulebook, setShowRulebook] = useState(false);
+
+  // Состояние активной проверки карты контроля (Бомба / Карантин)
   const [activeCheck, setActiveCheck] = useState<{
     card: any;
-    result: 'EXPLOSION' | 'FREE' | 'FAILED' | null;
+    checkType: 'BOMB' | 'QUARANTINE';
+    result: 'EXPLOSION' | 'DEFUSED' | 'FREE' | 'JAIL';
   } | null>(null);
 
-  if (!gameState || gameState.phase !== GamePhase.PLAYING) return null;
-
-  const currentPlayer = gameState.players.find((p) => p.id === mySocketId);
-  const activePlayer = gameState.players.find((p) => p.id === gameState.currentTurnPlayerId);
-
-  const isMyTurn = currentPlayer?.id === gameState.currentTurnPlayerId;
-  const phaseName = gameState.turnPhase ? LOC.TURN_PHASE_NAMES[gameState.turnPhase] : '';
-  const canPlayCards = isMyTurn && gameState.turnPhase === TurnPhase.EXECUTE;
+  const [prevDiscardCount, setPrevDiscardCount] = useState(gameState?.discardPile?.length ?? 0);
 
   // ▼▼▼ ПОДПИСКА НА СОБЫТИЯ ▼▼▼
   useEffect(() => {
@@ -83,24 +82,42 @@ export function GameTable() {
     };
   }, [socket]);
 
-  // Анимация карты проверки в центре стола только во время проверки карт контроля
-  const [prevDiscardCount, setPrevDiscardCount] = useState(gameState.discardPile.length);
+  // ▼▼▼ АНИМАЦИЯ ПРОВЕРКИ В ЦЕНТРЕ СТОЛА ▼▼▼
   useEffect(() => {
+    if (!gameState) return;
+
     if (gameState.discardPile.length > prevDiscardCount) {
       const topCard = gameState.discardPile[gameState.discardPile.length - 1];
-      if (gameState.turnPhase === TurnPhase.START && topCard && topCard.suit && topCard.rank) {
-        let result: 'EXPLOSION' | 'FREE' | 'FAILED' | null = null;
-        if (topCard.suit === Suit.SPADES && topCard.rank >= 2 && topCard.rank <= 9) {
-          result = 'EXPLOSION';
-        } else if (topCard.suit === Suit.HEARTS) {
-          result = 'FREE';
-        } else {
-          result = 'FAILED';
+      const activeP = gameState.players.find((p) => p.id === gameState.currentTurnPlayerId);
+
+      const hadBomb = activeP?.controlCards.some((c) => c.type === CardType.LOGIC_BOMB);
+      const hadQuarantine = activeP?.controlCards.some((c) => c.type === CardType.QUARANTINE);
+
+      if (topCard && topCard.suit && topCard.rank && (hadBomb || hadQuarantine)) {
+        const suitStr = String(topCard.suit).toUpperCase();
+        const rankNum = Number(topCard.rank);
+
+        if (hadBomb) {
+          const isSpade = suitStr === 'SPADES' || suitStr === '♠';
+          const explodes = isSpade && rankNum >= 2 && rankNum <= 9;
+          setActiveCheck({
+            card: topCard,
+            checkType: 'BOMB',
+            result: explodes ? 'EXPLOSION' : 'DEFUSED',
+          });
+        } else if (hadQuarantine) {
+          const isHeart = suitStr === 'HEARTS' || suitStr === '♥';
+          setActiveCheck({
+            card: topCard,
+            checkType: 'QUARANTINE',
+            result: isHeart ? 'FREE' : 'JAIL',
+          });
         }
-        setActiveCheck({ card: topCard, result });
+
         const timer = setTimeout(() => {
           setActiveCheck(null);
-        }, 2500);
+        }, 2200);
+
         setPrevDiscardCount(gameState.discardPile.length);
         return () => clearTimeout(timer);
       }
@@ -108,7 +125,16 @@ export function GameTable() {
     } else if (gameState.discardPile.length < prevDiscardCount) {
       setPrevDiscardCount(gameState.discardPile.length);
     }
-  }, [gameState.discardPile.length, gameState.turnPhase, prevDiscardCount]);
+  }, [gameState?.discardPile.length, gameState?.currentTurnPlayerId, prevDiscardCount]);
+
+  if (!gameState || gameState.phase !== GamePhase.PLAYING) return null;
+
+  const currentPlayer = gameState.players.find((p) => p.id === mySocketId);
+  const activePlayer = gameState.players.find((p) => p.id === gameState.currentTurnPlayerId);
+
+  const isMyTurn = currentPlayer?.id === gameState.currentTurnPlayerId;
+  const phaseName = gameState.turnPhase ? LOC.TURN_PHASE_NAMES[gameState.turnPhase] : '';
+  const canPlayCards = isMyTurn && gameState.turnPhase === TurnPhase.EXECUTE;
 
   // ▼▼▼ РАСЧЕТ ПОЗИЦИЙ ▼▼▼
   const getPlayerPosition = (index: number, total: number) => {
@@ -125,7 +151,6 @@ export function GameTable() {
     };
   };
 
-  // КАРТЫ НАПРАВЛЕННЫЕ НА ИГРОКА
   const isTargetedCard = (cardType: CardType): boolean => {
     return [
       CardType.PING,
@@ -137,15 +162,12 @@ export function GameTable() {
     ].includes(cardType);
   };
 
-  // DRAG START: Сохраняем данные
   const handleDragStart = (e: React.DragEvent, cardId: string, cardType: CardType) => {
     const payload = `${cardId}::${cardType}`;
     e.dataTransfer.setData('text/plain', payload);
     e.dataTransfer.effectAllowed = 'move';
-    console.log('[DragStart]', payload);
   };
 
-  // Парсер данных
   const parseDragData = (data: string) => {
     if (!data) return null;
     const parts = data.split('::');
@@ -155,49 +177,31 @@ export function GameTable() {
     return null;
   };
 
-  // DROP НА ИГРОКА: Всегда предотвращаем дефолт, если есть данные
   const handleDropOnPlayer = (e: React.DragEvent, targetId: string) => {
     e.preventDefault();
     e.stopPropagation();
 
     const rawData = e.dataTransfer.getData('text/plain');
-    console.log('[DropOnPlayer Raw]', rawData);
-
     const data = parseDragData(rawData);
-    console.log('[DropOnPlayer Parsed]', data);
 
     if (data) {
       if (isTargetedCard(data.cardType)) {
-        console.log('[PlayCard Targeted]', data.cardId, '->', targetId);
         playCard(data.cardId, targetId);
-      } else {
-        console.warn('[DropOnPlayer] Карта не направленная:', data.cardType);
       }
-    } else {
-      console.error('[DropOnPlayer] Не удалось распарсить данные');
     }
   };
 
-  // DROP НА СТОЛ: Всегда предотвращаем дефолт, если есть данные
   const handleDropOnTable = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
 
     const rawData = e.dataTransfer.getData('text/plain');
-    console.log('[DropOnTable Raw]', rawData);
-
     const data = parseDragData(rawData);
-    console.log('[DropOnTable Parsed]', data);
 
     if (data) {
       if (!isTargetedCard(data.cardType)) {
-        console.log('[PlayCard Table]', data.cardId);
         playCard(data.cardId);
-      } else {
-        console.warn('[DropOnTable] Карта требует цели:', data.cardType);
       }
-    } else {
-      console.error('[DropOnTable] Не удалось распарсить данные');
     }
   };
 
@@ -214,7 +218,6 @@ export function GameTable() {
           {LOC.UI.APP_TITLE}
         </h1>
         <div className="flex gap-4 items-center pointer-events-auto">
-          {/* Кнопка открытия Справочника правил */}
           <button
             type="button"
             onClick={() => setShowRulebook(true)}
@@ -323,7 +326,7 @@ export function GameTable() {
                     </div>
                   )}
 
-                  {/* ▼▼▼ ЭКИПИРОВКА (Оружие, Модификаторы) ▼▼▼ */}
+                  {/* ЭКИПИРОВКА */}
                   {player.equipment && player.equipment.length > 0 && (
                     <div className="flex gap-1 mt-2 justify-center min-w-[140px]">
                       {player.equipment.map((eqCard) => {
@@ -385,7 +388,7 @@ export function GameTable() {
                     </div>
                   )}
 
-                  {/* ▼▼▼ КАРТЫ КОНТРОЛЯ (Логическая Бомба, Тюрьма) ▼▼▼ */}
+                  {/* КАРТЫ КОНТРОЛЯ */}
                   {player.controlCards && player.controlCards.length > 0 && (
                     <div className="flex gap-1 mt-2 justify-center min-w-[140px]">
                       {player.controlCards.map((controlCard) => {
@@ -425,7 +428,7 @@ export function GameTable() {
         {/* СТОЛ - ЦЕНТРАЛЬНАЯ ОБЛАСТЬ */}
         <div className="absolute inset-0 flex items-center justify-center pointer-events-auto z-0">
           <div className="relative w-[60%] h-[60%] flex items-center justify-center">
-            {/* Зона Колоды */}
+            {/* Колода */}
             <div className="absolute left-0 top-1/2 -translate-y-1/2 flex flex-col items-center gap-2 pointer-events-none">
               <div className="w-20 h-28 bg-gray-900/50 border-2 border-cyber-purple/50 rounded-lg flex items-center justify-center relative overflow-hidden shadow-[0_0_15px_rgba(176,38,255,0.2)]">
                 <div className="absolute inset-0 bg-cyber-purple/10 flex flex-col items-center justify-center p-2">
@@ -445,29 +448,39 @@ export function GameTable() {
               </span>
             </div>
 
-            {/* Зона Проверки (Центр) */}
-            <div className="absolute top-0 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 h-32 justify-end pb-4 pointer-events-none z-20">
+            {/* Зона Проверки (Центр стола, не перекрывает игроков сверху) */}
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-2 pointer-events-none z-30">
               <AnimatePresence mode="wait">
                 {activeCheck && (
                   <motion.div
                     key={activeCheck.card.id}
-                    initial={{ y: -50, opacity: 0, scale: 0.8, rotateY: 90 }}
+                    initial={{ y: -30, opacity: 0, scale: 0.8, rotateY: 90 }}
                     animate={{ y: 0, opacity: 1, scale: 1, rotateY: 0 }}
-                    exit={{ y: 30, opacity: 0, scale: 0.5 }}
+                    exit={{ y: 20, opacity: 0, scale: 0.5 }}
                     transition={{ type: 'spring', stiffness: 200, damping: 20 }}
-                    className="w-16 h-24 bg-white rounded border border-gray-300 shadow-2xl flex flex-col items-center justify-center relative"
+                    className="w-18 h-26 bg-white rounded-lg border-2 border-cyan-400 shadow-[0_0_25px_rgba(6,182,212,0.6)] flex flex-col items-center justify-between p-2 select-none"
                   >
                     <div
-                      className="text-2xl font-bold"
+                      className="text-lg font-black leading-none self-start"
                       style={{ color: getSuitColor(activeCheck.card.suit) }}
                     >
-                      {getRankSymbol(activeCheck.card.rank)}
+                      <span>{getRankSymbol(activeCheck.card.rank)}</span>
+                      <span className="ml-0.5">{getSuitSymbol(activeCheck.card.suit)}</span>
                     </div>
+
                     <div
-                      className="text-3xl"
+                      className="text-3xl my-1"
                       style={{ color: getSuitColor(activeCheck.card.suit) }}
                     >
                       {getSuitSymbol(activeCheck.card.suit)}
+                    </div>
+
+                    <div
+                      className="text-lg font-black leading-none self-end rotate-180"
+                      style={{ color: getSuitColor(activeCheck.card.suit) }}
+                    >
+                      <span>{getRankSymbol(activeCheck.card.rank)}</span>
+                      <span className="ml-0.5">{getSuitSymbol(activeCheck.card.suit)}</span>
                     </div>
                   </motion.div>
                 )}
@@ -477,32 +490,41 @@ export function GameTable() {
                 <motion.span
                   initial={{ opacity: 0, scale: 0.5 }}
                   animate={{ opacity: 1, scale: 1.1 }}
-                  className="text-red-500 font-black text-sm tracking-widest drop-shadow-[0_0_8px_rgba(239,68,68,0.9)]"
+                  className="text-red-500 font-black text-sm tracking-widest drop-shadow-[0_0_10px_rgba(239,68,68,1)] bg-black/80 px-2 py-0.5 rounded border border-red-500"
                 >
-                  ВЗРЫВ!
+                  ВЗРЫВ! -3 HP
+                </motion.span>
+              )}
+              {activeCheck?.result === 'DEFUSED' && (
+                <motion.span
+                  initial={{ opacity: 0, scale: 0.5 }}
+                  animate={{ opacity: 1, scale: 1.1 }}
+                  className="text-cyan-400 font-black text-xs tracking-wider drop-shadow-[0_0_10px_rgba(6,182,212,0.9)] bg-black/80 px-2 py-0.5 rounded border border-cyan-400"
+                >
+                  БОМБА НЕ ВЗОРВАЛАСЬ (ПЕРЕДАЧА)
                 </motion.span>
               )}
               {activeCheck?.result === 'FREE' && (
                 <motion.span
                   initial={{ opacity: 0, scale: 0.5 }}
                   animate={{ opacity: 1, scale: 1.1 }}
-                  className="text-green-500 font-black text-sm tracking-widest drop-shadow-[0_0_8px_rgba(34,197,94,0.9)]"
+                  className="text-green-400 font-black text-xs tracking-widest drop-shadow-[0_0_10px_rgba(34,197,94,0.9)] bg-black/80 px-2 py-0.5 rounded border border-green-500"
                 >
-                  СВОБОДА!
+                  СВОБОДА! (ВЫХОД)
                 </motion.span>
               )}
-              {activeCheck?.result === 'FAILED' && (
+              {activeCheck?.result === 'JAIL' && (
                 <motion.span
                   initial={{ opacity: 0, scale: 0.5 }}
                   animate={{ opacity: 1, scale: 1.1 }}
-                  className="text-yellow-500 font-black text-xs tracking-wider drop-shadow-[0_0_6px_rgba(234,179,8,0.8)]"
+                  className="text-yellow-400 font-black text-xs tracking-wider drop-shadow-[0_0_8px_rgba(234,179,8,0.9)] bg-black/80 px-2 py-0.5 rounded border border-yellow-500"
                 >
-                  КАРАНТИН
+                  КАРАНТИН (ПРОПУСК ХОДА)
                 </motion.span>
               )}
             </div>
 
-            {/* Зона Сброса - верхняя карта сброса видна на стопке */}
+            {/* Сброс */}
             <div className="absolute right-0 top-1/2 -translate-y-1/2 flex flex-col items-center gap-2 pointer-events-none">
               <div className="w-20 h-28 bg-gray-900/60 border-2 border-dashed border-gray-700 rounded-lg flex items-center justify-center relative overflow-hidden shadow-lg">
                 {lastDiscardedCard ? (
@@ -535,7 +557,7 @@ export function GameTable() {
               </span>
             </div>
 
-            {/* АКТИВНАЯ ЗОНА ДЛЯ ДРОПА ОБЩИХ КАРТ */}
+            {/* Дроп-зона */}
             <div
               onDragOver={(e) => {
                 if (canPlayCards) {
@@ -639,7 +661,6 @@ export function GameTable() {
         <CriticalDamageModal onClose={() => setShowCriticalModal(false)} />
       )}
 
-      {/* Справочник правил */}
       <RulebookModal
         isOpen={showRulebook}
         onClose={() => setShowRulebook(false)}
