@@ -1,6 +1,5 @@
 import type { Server, Socket } from 'socket.io';
 import { prepareGame } from '../game/setup.js';
-import { GAME_EVENTS, StartGamePayload } from '@cyberbang/shared/types';
 import {
   CreateRoomPayload,
   JoinRoomPayload,
@@ -293,7 +292,7 @@ function handleEndTurn(io: Server, socket: Socket, store: RoomStore) {
   // Проверяем, что это ход текущего игрока
   if (room.game.currentTurnPlayerId !== socket.id) return;
 
-  endTurn(room.game);
+  endTurn(room.game, io);
   
   // Рассылаем обновленное состояние всем в комнате
   const safeGameState = {
@@ -500,4 +499,14 @@ function endMarketPhase(game: any, io: Server, store: RoomStore) {
   game.marketInitiatorId = undefined;
 
   io.to(`room:${(store as any).getRoomByGame?.(game)?.id || 'unknown'}`).emit(GAME_EVENTS.GAME_STATE_UPDATE, { gameState: game });
+}
+
+//Временная заглушка
+function handleDiscardSocialEngineeringCard(
+  io: Server,
+  socket: Socket,
+  store: RoomStore,
+  payload: { cardId: string; location: string }
+) {
+  console.log('[Server] discardSocialEngineeringCard:', payload);
 }

@@ -40,6 +40,14 @@ export function startTurn(game: GameState, io?: Server): boolean {
   const currentPlayer = game.players.find((p) => p.id === game.currentTurnPlayerId);
   if (!currentPlayer || !currentPlayer.isAlive) return false;
 
+  // Устанавливаем фазу проверки карт контроля:
+  game.turnPhase = TurnPhase.START;
+  if (io) {
+    io.to(`room:${game.roomId}`).emit(GAME_EVENTS.GAME_STATE_UPDATE, {
+      gameState: getSafeGameState(game),
+    });
+  }
+
   // =========================================================================
   // 1. ПРОВЕРКА КАРТ КОНТРОЛЯ
   // =========================================================================
@@ -67,6 +75,8 @@ export function startTurn(game: GameState, io?: Server): boolean {
       if (explodes) {
         console.log(`[Engine] Логическая бомба взорвалась на ${currentPlayer.nickname}!`);
         currentPlayer.controlCards = currentPlayer.controlCards.filter((c) => c.id !== bombCard.id);
+        
+        game.discardPile.push(bombCard);
 
         applyDamage(game, currentPlayer, 3, null, io);
 
@@ -110,13 +120,15 @@ export function startTurn(game: GameState, io?: Server): boolean {
     if (checkCard) {
       game.discardPile.push(checkCard);
 
+      // Сбрасываем саму карту карантина в сброс!
+      currentPlayer.controlCards = currentPlayer.controlCards.filter((c) => c.id !== jailCard.id);
+      game.discardPile.push(jailCard);
+
       if (io) {
         io.to(`room:${game.roomId}`).emit(GAME_EVENTS.GAME_STATE_UPDATE, {
           gameState: getSafeGameState(game),
         });
       }
-
-      currentPlayer.controlCards = currentPlayer.controlCards.filter((c) => c.id !== jailCard.id);
 
       if (checkCard.suit === Suit.HEARTS) {
         console.log(`[Engine] ${currentPlayer.nickname} вышел из Карантина (Черви)!`);
@@ -127,6 +139,7 @@ export function startTurn(game: GameState, io?: Server): boolean {
       }
     } else {
       currentPlayer.controlCards = currentPlayer.controlCards.filter((c) => c.id !== jailCard.id);
+      game.discardPile.push(jailCard);
     }
   }
 
@@ -594,7 +607,7 @@ export function playCard(
 
   if (card.type === CardType.QUARANTINE) {
     if (!targetId) return { success: false, message: 'Выберите цель для Карантина' };
-    target = game.players.find(p => p.id === targetId && p.isAlive);
+    const target = game.players.find(p => p.id === targetId && p.isAlive);
     if (!target) return { success: false, message: 'Цель не найдена' };
     if (target.id === playerId) return { success: false, message: 'Нельзя посадить в карантин себя' };
     if (target.role === RoleType.ADMIN) return { success: false, message: 'Администратора нельзя изолировать в карантин' };
