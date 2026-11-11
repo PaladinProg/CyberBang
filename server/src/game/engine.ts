@@ -19,7 +19,7 @@ function shuffle<T>(array: T[]): T[] {
   const result = [...array];
   for (let i = result.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
-    [result[i], result[j]] = [result[j], result[i]];
+    [result[i], result[j]] = [result[j], array[i]];
   }
   return result;
 }
@@ -75,12 +75,11 @@ export function startTurn(game: GameState, io?: Server): boolean {
       if (explodes) {
         console.log(`[Engine] Логическая бомба взорвалась на ${currentPlayer.nickname}!`);
         currentPlayer.controlCards = currentPlayer.controlCards.filter((c) => c.id !== bombCard.id);
-        
         game.discardPile.push(bombCard);
 
         applyDamage(game, currentPlayer, 3, null, io);
 
-        // Если игрок умер от взрыва — ход сразу переходит следующему, игра НЕ зависает!
+        // Если игрок умер от взрыва — ход сразу переходит следующему
         if (!currentPlayer.isAlive) {
           passTurnToNextAlive(game, io);
           return false;
@@ -119,7 +118,7 @@ export function startTurn(game: GameState, io?: Server): boolean {
 
     if (checkCard) {
       game.discardPile.push(checkCard);
-
+      
       // Сбрасываем саму карту карантина в сброс!
       currentPlayer.controlCards = currentPlayer.controlCards.filter((c) => c.id !== jailCard.id);
       game.discardPile.push(jailCard);
@@ -138,6 +137,7 @@ export function startTurn(game: GameState, io?: Server): boolean {
         return false;
       }
     } else {
+      // Редкий кейс: колода пуста и сброс пуст
       currentPlayer.controlCards = currentPlayer.controlCards.filter((c) => c.id !== jailCard.id);
       game.discardPile.push(jailCard);
     }
@@ -415,6 +415,35 @@ export function playCard(
     return { success: true };
   }
 
+    // --- DUEL (Кибер-дуэль) ---
+  if (card.type === CardType.DUEL) {
+    if (game.currentTurnPlayerId !== playerId || game.turnPhase !== TurnPhase.EXECUTE) {
+      return { success: false, message: 'Дуэль можно начать только в свой ход' };
+    }
+    if (!targetId) return { success: false, message: 'Укажите цель для дуэли' };
+    
+    const target = game.players.find((p) => p.id === targetId);
+    if (!target || !target.isAlive) return { success: false, message: 'Цель неактивна' };
+    if (target.id === playerId) return { success: false, message: 'Нельзя вызвать на дуэль себя' };
+
+    // Тратим карту дуэли
+    player.hand.splice(cardIndex, 1);
+    game.discardPile.push(card);
+
+    console.log(`[Engine] ${player.nickname} вызвал ${target.nickname} на Кибер-дуэль!`);
+
+    // Запускаем процесс дуэли
+    resolveDuel(game, player.id, target.id, io);
+
+    if (io) {
+      io.to(`room:${game.roomId}`).emit(GAME_EVENTS.GAME_STATE_UPDATE, {
+        gameState: getSafeGameState(game),
+      });
+    }
+
+    return { success: true };
+  }
+
   // --- DATA_STREAM (2 карты) ---
   if (card.type === CardType.DATA_STREAM) {
     if (game.currentTurnPlayerId !== playerId || game.turnPhase !== TurnPhase.EXECUTE) {
@@ -443,6 +472,45 @@ export function playCard(
     return { success: true };
   }
 
+  // --- BLACK_MARKET (Чёрный рынок) ---
+  if (card.type === CardType.BLACK_MARKET) {
+    if (game.currentTurnPlayerId !== playerId || game.turnPhase !== TurnPhase.EXECUTE) {
+      return { success: false, message: 'Чёрный рынок можно открыть только в свой ход' };
+    }
+
+    const alivePlayers = game.players.filter((p) => p.isAlive);
+    const cardsCount = Math.min(alivePlayers.length, game.deck.length);
+
+    if (cardsCount === 0) {
+      return { success: false, message: 'В колоде нет карт для рынка' };
+    }
+
+    const marketCards: CardInstance[] = [];
+    for (let i = 0; i < cardsCount; i++) {
+      marketCards.push(game.deck.shift()!);
+    }
+
+    const initiatorIndex = alivePlayers.findIndex((p) => p.id === playerId);
+
+    game.marketCards = marketCards;
+    game.marketPickerIndex = initiatorIndex;
+    game.marketInitiatorId = playerId;
+    game.turnPhase = TurnPhase.MARKET;
+
+    console.log(`[Engine] ${player.nickname} открыл Чёрный Рынок (${cardsCount} карт)`);
+
+    player.hand.splice(cardIndex, 1);
+    game.discardPile.push(card);
+
+    if (io) {
+      io.to(`room:${game.roomId}`).emit(GAME_EVENTS.GAME_STATE_UPDATE, {
+        gameState: getSafeGameState(game),
+      });
+    }
+
+    return { success: true };
+  }
+
   // --- VPN (Паника — кража карты на дистанции 1) ---
   if (card.type === CardType.VPN) {
     if (game.currentTurnPlayerId !== playerId || game.turnPhase !== TurnPhase.EXECUTE) {
@@ -452,7 +520,6 @@ export function playCard(
     const target = game.players.find((p) => p.id === targetId);
     if (!target || !target.isAlive) return { success: false, message: 'Цель неактивна' };
 
-    // Проверка дистанции: должна быть строго 1
     const dist = getEffectiveDistance(game.players, playerId, targetId);
     if (dist > 1) {
       return { success: false, message: `VPN работает только на дистанции 1 (текущая: ${dist})` };
@@ -462,7 +529,6 @@ export function playCard(
       return { success: false, message: 'У цели нет карт для кражи' };
     }
 
-    // Кража случайной карты из руки
     if (target.hand.length > 0) {
       const stolen = target.hand.splice(Math.floor(Math.random() * target.hand.length), 1)[0];
       player.hand.push(stolen);
@@ -482,13 +548,50 @@ export function playCard(
     const target = game.players.find((p) => p.id === targetId);
     if (!target || !target.isAlive) return { success: false, message: 'Цель неактивна' };
 
-    if (target.hand.length > 0) {
-      const discarded = target.hand.splice(Math.floor(Math.random() * target.hand.length), 1)[0];
-      game.discardPile.push(discarded);
+    // Проверяем наличие карт у цели
+    const hasCards = 
+      target.hand.length > 0 || 
+      target.equipment.length > 0 || 
+      target.controlCards.length > 0;
+
+    if (!hasCards) {
+      return { success: false, message: 'У цели нет карт для сброса' };
     }
 
+    // Создаем запрос на сброс
+    if (!game.pendingSocialEngineering) game.pendingSocialEngineering = new Map();
+    
+    game.pendingSocialEngineering.set(targetId, {
+      sourceId: playerId,
+      cardId: card.id,
+      timestamp: Date.now()
+    });
+
+    console.log(`[Engine] ${player.nickname} использовал SOCIAL_ENGINEERING на ${target.nickname}`);
+
+    // Отправляем событие цели
+    if (io) {
+      io.to(targetId).emit('socialEngineeringRequest', {
+        sourceId: playerId,
+        timeout: 15000
+      });
+    }
+
+    // Тратим карту SOCIAL_ENGINEERING
     player.hand.splice(cardIndex, 1);
     game.discardPile.push(card);
+
+    if (io) {
+      io.to(`room:${game.roomId}`).emit(GAME_EVENTS.GAME_STATE_UPDATE, {
+        gameState: getSafeGameState(game),
+      });
+    }
+
+    // Таймаут 15 секунд
+    setTimeout(() => {
+      resolveSocialEngineering(game, targetId, io);
+    }, 15000);
+
     return { success: true };
   }
 
@@ -633,7 +736,6 @@ export function applyDamage(
 ) {
   target.currentHp -= amount;
 
-  // Если HP <= 0, даём шанс спастись Стимулянтом
   if (target.currentHp <= 0 && io && !target.isDying) {
     target.isDying = true;
     io.to(target.id).emit('criticalDamage', {
@@ -665,7 +767,6 @@ function handleDeath(game: GameState, victim: PlayerState, killerId: string | nu
   victim.isAlive = false;
   victim.isRoleRevealed = true;
 
-  // Сброс всех карт жертвы
   victim.hand.forEach((c) => game.discardPile.push(c));
   victim.hand = [];
   victim.equipment.forEach((c) => game.discardPile.push(c));
@@ -674,11 +775,9 @@ function handleDeath(game: GameState, victim: PlayerState, killerId: string | nu
   victim.controlCards = [];
   game.pendingAttacks?.delete(victim.id);
 
-  // Награды и штрафы
   if (killerId) {
     const killer = game.players.find((p) => p.id === killerId);
     if (killer && killer.isAlive) {
-      // Награда: убил Хакера -> берет 3 карты из колоды
       if (victim.role === RoleType.HACKER) {
         console.log(`[Engine] ${killer.nickname} убил Хакера и получает 3 карты!`);
         refillDeck(game);
@@ -687,7 +786,6 @@ function handleDeath(game: GameState, victim: PlayerState, killerId: string | nu
         }
       }
 
-      // Штраф: Админ убил Агента (Deputy) -> сбрасывает все карты
       if (killer.role === RoleType.ADMIN && victim.role === RoleType.DEPUTY) {
         console.log(`[Engine] Админ убил своего Агента! Штраф: сброс всех карт.`);
         killer.hand.forEach((c) => game.discardPile.push(c));
@@ -747,6 +845,64 @@ function resolvePendingAttack(game: GameState, targetId: string, io?: Server) {
   });
 }
 
+/** Разрешение SOCIAL_ENGINEERING (автоматический выбор при таймауте) */
+function resolveSocialEngineering(game: GameState, targetId: string, io?: Server) {
+  const pending = game.pendingSocialEngineering?.get(targetId);
+  if (!pending) return; // Уже разрешено вручную
+
+  const target = game.players.find((p) => p.id === targetId);
+  if (!target || !target.isAlive) {
+    game.pendingSocialEngineering?.delete(targetId);
+    return;
+  }
+
+  // Автоматически выбираем случайную карту из всех доступных
+  const allCards = [
+    ...target.hand.map(c => ({ card: c, location: 'hand' as const })),
+    ...target.equipment.map(c => ({ card: c, location: 'equipment' as const })),
+    ...target.controlCards.map(c => ({ card: c, location: 'control' as const }))
+  ];
+
+  if (allCards.length > 0) {
+    const randomChoice = allCards[Math.floor(Math.random() * allCards.length)];
+    discardCardFromLocation(game, target, randomChoice.location, randomChoice.card.id);
+    console.log(`[Engine] Auto-discarded ${randomChoice.card.type} from ${target.nickname} (timeout)`);
+  }
+
+  game.pendingSocialEngineering?.delete(targetId);
+
+  if (io) {
+    io.to(`room:${game.roomId}`).emit(GAME_EVENTS.GAME_STATE_UPDATE, {
+      gameState: getSafeGameState(game),
+    });
+  }
+}
+
+/** Удаление карты из указанного места в сброс */
+function discardCardFromLocation(
+  game: GameState, 
+  player: PlayerState, 
+  location: 'hand' | 'equipment' | 'control', 
+  cardId: string
+) {
+  let card: CardInstance | undefined;
+
+  if (location === 'hand') {
+    const idx = player.hand.findIndex(c => c.id === cardId);
+    if (idx !== -1) card = player.hand.splice(idx, 1)[0];
+  } else if (location === 'equipment') {
+    const idx = player.equipment.findIndex(c => c.id === cardId);
+    if (idx !== -1) card = player.equipment.splice(idx, 1)[0];
+  } else if (location === 'control') {
+    const idx = player.controlCards.findIndex(c => c.id === cardId);
+    if (idx !== -1) card = player.controlCards.splice(idx, 1)[0];
+  }
+
+  if (card) {
+    game.discardPile.push(card);
+  }
+}
+
 /** Расчет дистанции с учетом всех модификаторов */
 export function getEffectiveDistance(
   players: PlayerState[],
@@ -771,12 +927,10 @@ export function getEffectiveDistance(
   const attacker = players.find((p) => p.id === fromId);
   const target = players.find((p) => p.id === toId);
 
-  // Ghost Protocol (+1 к дистанции до цели)
   if (target?.equipment.some((e) => e.type === CardType.GHOST_PROTOCOL)) {
     dist += 1;
   }
 
-  // Sniper Scope (-1 к дистанции от атакующего, минимум 1)
   if (attacker?.equipment.some((e) => e.type === CardType.SNIPER_SCOPE)) {
     dist = Math.max(1, dist - 1);
   }
@@ -791,4 +945,120 @@ export function getSafeGameState(game: GameState) {
     pendingAttacks: Object.fromEntries(game.pendingAttacks || []),
     pendingSocialEngineering: Object.fromEntries(game.pendingSocialEngineering || []),
   };
+}
+
+/** Завершение фазы Чёрного Рынка */
+export function endMarketPhase(game: GameState, io?: Server, roomId?: string) {
+  console.log('[Engine] Чёрный рынок закрыт');
+  
+  game.marketCards = [];
+  game.marketPickerIndex = undefined;
+  
+  const initiator = game.players.find((p) => p.id === game.marketInitiatorId);
+  
+  if (initiator && initiator.isAlive) {
+    game.currentTurnPlayerId = initiator.id;
+    game.turnPhase = TurnPhase.EXECUTE;
+  } else {
+    passTurnToNextAlive(game, io);
+    return;
+  }
+  
+  game.marketInitiatorId = undefined;
+
+  if (io && roomId) {
+    io.to(`room:${roomId}`).emit(GAME_EVENTS.GAME_STATE_UPDATE, {
+      gameState: getSafeGameState(game),
+    });
+  }
+}
+
+/**
+ * Визуальная Кибер-дуэль (пошаговая перестрелка)
+ */
+function resolveDuel(
+  game: GameState, 
+  initiatorId: string, 
+  targetId: string, 
+  io?: Server
+) {
+  const initiator = game.players.find(p => p.id === initiatorId);
+  const target = game.players.find(p => p.id === targetId);
+
+  if (!initiator || !target || !initiator.isAlive || !target.isAlive) return;
+
+  let currentAttacker = initiator;
+  let currentDefender = target;
+  let step = 0;
+  const MAX_STEPS = 20; // Защита от бесконечного цикла (на случай багов)
+
+  function nextDuelStep() {
+    step++;
+    if (step > MAX_STEPS) {
+      console.warn('[Engine] Duel exceeded max steps, forcing end');
+      applyDamage(game, currentAttacker, 1, initiatorId, io);
+      finalizeDuel();
+      return;
+    }
+
+    // Проверяем, живы ли участники (могли умереть от других эффектов во время дуэли)
+    if (!currentAttacker.isAlive || !currentDefender.isAlive) {
+      finalizeDuel();
+      return;
+    }
+
+    // Ищем ПИНГ у текущего атакующего
+    const pingIndex = currentAttacker.hand.findIndex(c => c.type === CardType.PING);
+    
+    if (pingIndex !== -1) {
+      // Атакующий отвечает ПИНГом
+      const pingCard = currentAttacker.hand.splice(pingIndex, 1)[0];
+      game.discardPile.push(pingCard);
+      
+      console.log(`[Engine] Duel Step ${step}: ${currentAttacker.nickname} fires PING!`);
+      
+      // Отправляем событие на клиент для анимации выстрела
+      if (io) {
+        io.to(`room:${game.roomId}`).emit('duelShot', {
+          attackerId: currentAttacker.id,
+          defenderId: currentDefender.id,
+          step: step
+        });
+      }
+
+      // Меняем роли местами
+      [currentAttacker, currentDefender] = [currentDefender, currentAttacker];
+
+      // Задержка перед следующим шагом (чтобы игроки увидели анимацию)
+      setTimeout(nextDuelStep, 1200); 
+    } else {
+      // У текущего атакующего НЕТ ПИНГА -> он проиграл дуэль
+      console.log(`[Engine] Duel ended! ${currentAttacker.nickname} has no PINGs left.`);
+      
+      // Небольшая пауза перед нанесением урона для драматического эффекта
+      if (io) {
+        io.to(`room:${game.roomId}`).emit('duelEnd', {
+          loserId: currentAttacker.id,
+          winnerId: currentDefender.id,
+          initiatorId: initiatorId
+        });
+      }
+
+      setTimeout(() => {
+        applyDamage(game, currentAttacker, 1, initiatorId, io);
+        finalizeDuel();
+      }, 800);
+    }
+  }
+
+  function finalizeDuel() {
+    if (io) {
+      io.to(`room:${game.roomId}`).emit(GAME_EVENTS.GAME_STATE_UPDATE, {
+        gameState: getSafeGameState(game),
+      });
+    }
+  }
+
+  // Запускаем первый шаг
+  nextDuelStep();
 }
