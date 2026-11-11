@@ -1,3 +1,4 @@
+// server/src/rooms/handlers.ts
 import type { Server, Socket } from 'socket.io';
 import { prepareGame } from '../game/setup.js';
 import {
@@ -7,6 +8,10 @@ import {
   RoomStatus,
   SOCKET_EVENTS,
   SocketErrorCode,
+  GAME_EVENTS,
+  StartGamePayload,
+  PlayCardPayload,
+  PickMarketCardPayload,
 } from '@cyberbang/shared/types';
 import {
   makeSocketError,
@@ -15,8 +20,7 @@ import {
   validateNickname,
   validateRoomName,
 } from './store.js';
-import { startTurn, endTurn, playCard } from '../game/engine.js';
-import { GAME_EVENTS, StartGamePayload, PlayCardPayload, PickMarketCardPayload, } from '@cyberbang/shared/types'; // Нужно добавить PlayCardPayload в types
+import { startTurn, endTurn, playCard, endMarketPhase, getSafeGameState } from '../game/engine.js';
 
 /** Рассылка списка комнат всем; актор получает персональный yourRoomId */
 function notifyRoomUpdate(
@@ -60,7 +64,6 @@ export function registerLobbyHandlers(io: Server, store: RoomStore): void {
     });
 
     socket.on(GAME_EVENTS.REQUEST_STATE, (payload?: { roomId: string }) => {
-      // Берем roomId из payload или из сессии сокета
       const roomId = payload?.roomId || store.getSession(socket.id)?.roomId;
       console.log(`[Server] REQUEST_STATE received for room: ${roomId}, socket: ${socket.id}`);
       
@@ -80,7 +83,6 @@ export function registerLobbyHandlers(io: Server, store: RoomStore): void {
       handleEndTurn(io, socket, store);
     });
     
-    // Обработчик розыгрыша карты
     socket.on('playCard', (payload: PlayCardPayload) => {
       handlePlayCard(io, socket, store, payload);
     });
@@ -155,33 +157,27 @@ function handleStartGame(
   const session = store.getSession(socket.id);
   const room = store.getRoom(payload.roomId);
 
-  // Валидация: только хост может начать игру
   if (!session || !room || room.hostId !== socket.id) {
-    emitError(socket, SocketErrorCode.NOT_HOST); // Добавь этот код ошибки в types
+    emitError(socket, SocketErrorCode.NOT_HOST);
     return;
   }
 
-  // Валидация: минимум 4 игрока
   if (room.playerIds.length < 4) {
-    emitError(socket, SocketErrorCode.NOT_ENOUGH_PLAYERS); // Добавь этот код
+    emitError(socket, SocketErrorCode.NOT_ENOUGH_PLAYERS);
     return;
   }
 
   try {
     const gameState = prepareGame(room, store.sessions);
     room.game = gameState;
-    room.status = 'PLAYING' as any; // RoomStatus.PLAYING
+    room.status = 'PLAYING' as any;
 
-    // Заполняем никнеймы в gameState из сессий
     gameState.players.forEach(p => {
       const sess = store.sessions.get(p.id);
       if (sess) p.nickname = sess.nickname;
     });
 
-    // Оповещаем всех в комнате
     io.to(`room:${room.id}`).emit(GAME_EVENTS.GAME_STARTED, { gameState });
-    
-    // Обновляем список комнат (статус changed)
     notifyRoomUpdate(io, store);
   } catch (err) {
     console.error('Game setup failed:', err);
@@ -264,17 +260,13 @@ function handleLeaveRoom(
 function handleRequestState(io: Server, socket: Socket, store: RoomStore, roomId: string) {
   const session = store.getSession(socket.id);
   
-  // Если игрок не в комнате или комната не найдена — ничего не делаем
   if (!session?.roomId) return;
   
   const room = store.getRoom(session.roomId);
   if (!room || !room.game) return;
 
-  // Отправляем текущее состояние игры конкретному игроку
-  // Используем то же событие GAME_STARTED или специальное, но для простоты можно переиспользовать логику синхронизации
   socket.emit(GAME_EVENTS.GAME_STARTED, { gameState: room.game });
   
-  // Также обновляем его статус в лобби (чтобы он видел, что он в комнате PLAYING)
   const summaries = store.getSummaries();
   socket.emit(SOCKET_EVENTS.ROOM_UPDATE, { 
     rooms: summaries, 
@@ -289,17 +281,13 @@ function handleEndTurn(io: Server, socket: Socket, store: RoomStore) {
   const room = store.getRoom(session.roomId);
   if (!room?.game) return;
 
-  // Проверяем, что это ход текущего игрока
   if (room.game.currentTurnPlayerId !== socket.id) return;
 
   endTurn(room.game, io);
   
-  // Рассылаем обновленное состояние всем в комнате
-  const safeGameState = {
-    ...room.game,
-    pendingAttacks: Object.fromEntries(room.game.pendingAttacks || [])
-  };
-  io.to(`room:${room.id}`).emit(GAME_EVENTS.GAME_STATE_UPDATE, { gameState: room.game });
+  io.to(`room:${room.id}`).emit(GAME_EVENTS.GAME_STATE_UPDATE, { 
+    gameState: getSafeGameState(room.game) 
+  });
 }
 
 function handlePlayCard(io: Server, socket: Socket, store: RoomStore, payload: PlayCardPayload) {
@@ -312,15 +300,14 @@ function handlePlayCard(io: Server, socket: Socket, store: RoomStore, payload: P
   const result = playCard(room.game, socket.id, payload.cardId, payload.targetId, io);
   
   if (result.success) {
-    // Отправляем обновление состояния
-    const safeGameState = {
-      ...room.game,
-      pendingAttacks: Object.fromEntries(room.game.pendingAttacks || [])
-    };
-    io.to(`room:${room.id}`).emit(GAME_EVENTS.GAME_STATE_UPDATE, { gameState: room.game });
+    io.to(`room:${room.id}`).emit(GAME_EVENTS.GAME_STATE_UPDATE, { 
+      gameState: getSafeGameState(room.game) 
+    });
   } else {
-    // Отправляем ошибку конкретному игроку
-    socket.emit(SOCKET_EVENTS.SOCKET_ERROR, { code: 'INVALID_ACTION', message: result.message });
+    socket.emit(SOCKET_EVENTS.SOCKET_ERROR, { 
+      code: SocketErrorCode.INVALID_ACTION, 
+      message: result.message 
+    });
   }
 }
 
@@ -356,7 +343,6 @@ function handleReconnectToRoom(
   const oldSocketId = playerInGame.id;
   const newSocketId = socket.id;
 
-  // 1. Обновляем ID игрока в объекте игры на новый socket.id
   playerInGame.id = newSocketId;
   playerInGame.isConnected = true;
 
@@ -364,38 +350,30 @@ function handleReconnectToRoom(
     room.game.currentTurnPlayerId = newSocketId;
   }
 
-  // Обновляем pendingAttacks, если были
   if (room.game.pendingAttacks && room.game.pendingAttacks.has(oldSocketId)) {
     const attacks = room.game.pendingAttacks.get(oldSocketId)!;
     room.game.pendingAttacks.delete(oldSocketId);
     room.game.pendingAttacks.set(newSocketId, attacks);
   }
 
-  // 2. Обновляем сессию и список комнат
   store.upsertSession(newSocketId, nickname);
   room.playerIds = room.playerIds.map((id) => (id === oldSocketId ? newSocketId : id));
   if (room.hostId === oldSocketId) room.hostId = newSocketId;
 
   void socket.join(`room:${roomId}`);
 
-  // 3. Отправляем сериализованное состояние
-  const safeGameState = {
-    ...room.game,
-    pendingAttacks: Object.fromEntries(room.game.pendingAttacks || []),
-  };
+  const safeGameState = getSafeGameState(room.game);
 
   socket.emit('reconnectResult', {
     success: true,
     gameState: safeGameState,
   });
 
-  // Уведомляем остальных об обновлении сокета игрока
   io.to(`room:${roomId}`).emit(GAME_EVENTS.GAME_STATE_UPDATE, { gameState: safeGameState });
 
   console.log(`[Server] ✅ Игрок ${nickname} успешно переподключен (ID: ${oldSocketId} -> ${newSocketId})`);
 }
 
-// ФУНКЦИЯ ОБРАБОТКИ ВЫБОРА КАРТЫ С РЫНКА
 function handlePickMarketCard(
   io: Server, 
   socket: Socket, 
@@ -410,16 +388,13 @@ function handlePickMarketCard(
 
   const game = room.game;
 
-  // 1. Проверка: фаза рынка?
-  // Примечание: TurnPhase.MARKET должен быть добавлен в enum TurnPhase в shared/types
-  if ((game as any).turnPhase !== 'MARKET') {
-    console.warn(`[Server] pickMarketCard ignored: not in MARKET phase (current: ${(game as any).turnPhase})`);
+  if (game.turnPhase !== 'MARKET') {
+    console.warn(`[Server] pickMarketCard ignored: not in MARKET phase`);
     return;
   }
   
-  // 2. Проверка: мой ли черёд?
   const alivePlayers = game.players.filter(p => p.isAlive);
-  const currentPickerIndex = (game as any).marketPickerIndex;
+  const currentPickerIndex = game.marketPickerIndex;
   
   if (currentPickerIndex === undefined || currentPickerIndex >= alivePlayers.length) {
     console.error('[Server] Invalid marketPickerIndex');
@@ -430,25 +405,23 @@ function handlePickMarketCard(
   
   if (socket.id !== currentPickerId) {
     socket.emit(SOCKET_EVENTS.SOCKET_ERROR, { 
-      code: 'INVALID_ACTION', 
+      code: SocketErrorCode.INVALID_ACTION, 
       message: 'Сейчас не ваш выбор!' 
     });
     return;
   }
 
-  // 3. Ищем карту на рынке
-  const marketCards = (game as any).marketCards || [];
-  const cardIndex = marketCards.findIndex((c: any) => c.id === payload.cardId);
+  const marketCards = game.marketCards || [];
+  const cardIndex = marketCards.findIndex((c) => c.id === payload.cardId);
   
   if (cardIndex === -1) {
     socket.emit(SOCKET_EVENTS.SOCKET_ERROR, { 
-      code: 'INVALID_ACTION', 
+      code: SocketErrorCode.INVALID_ACTION, 
       message: 'Карта больше недоступна на рынке' 
     });
     return;
   }
 
-  // 4. Забираем карту
   const card = marketCards.splice(cardIndex, 1)[0];
   const player = game.players.find(p => p.id === socket.id);
   
@@ -457,56 +430,80 @@ function handlePickMarketCard(
     console.log(`[Engine] ${player.nickname} picked ${card.type} from Black Market`);
   }
 
-  // 5. Следующий игрок
-  (game as any).marketPickerIndex = (currentPickerIndex + 1) % alivePlayers.length;
+  game.marketPickerIndex = (currentPickerIndex + 1) % alivePlayers.length;
 
-  // 6. Проверяем, закончился ли рынок
   if (marketCards.length === 0) {
-    endMarketPhase(game, io, store);
+    endMarketPhase(game, io, room.id);
   } else {
-    // Если карты есть, просто обновляем состояние
-    io.to(`room:${room.id}`).emit(GAME_EVENTS.GAME_STATE_UPDATE, { gameState: game });
+    io.to(`room:${room.id}`).emit(GAME_EVENTS.GAME_STATE_UPDATE, { 
+      gameState: getSafeGameState(game) 
+    });
   }
 }
 
-// Вспомогательная функция завершения фазы рынка
-function endMarketPhase(game: any, io: Server, store: RoomStore) {
-  console.log('[Engine] Black Market closed');
-  
-  // Очищаем состояние рынка
-  game.marketCards = [];
-  game.marketPickerIndex = undefined;
-  
-  // Возвращаем ход инициатору в фазу EXECUTE
-  const initiatorId = game.marketInitiatorId;
-  const initiator = game.players.find((p: any) => p.id === initiatorId);
-  
-  if (initiator && initiator.isAlive) {
-    game.currentTurnPlayerId = initiator.id;
-    game.turnPhase = 'EXECUTE'; // Используем строку, т.к. enum может быть не импортирован здесь напрямую
-  } else {
-    // Если инициатор мертв, передаем ход дальше
-    // Для простоты MVP можно просто передать следующему живому
-    const alivePlayers = game.players.filter((p: any) => p.isAlive);
-    if (alivePlayers.length > 0) {
-       // Находим индекс текущего (мертвого или отсутствующего) и берем следующего
-       // Или просто берем первого живого для надежности
-       game.currentTurnPlayerId = alivePlayers[0].id;
-       game.turnPhase = 'EXECUTE';
-    }
-  }
-  
-  game.marketInitiatorId = undefined;
-
-  io.to(`room:${(store as any).getRoomByGame?.(game)?.id || 'unknown'}`).emit(GAME_EVENTS.GAME_STATE_UPDATE, { gameState: game });
-}
-
-//Временная заглушка
 function handleDiscardSocialEngineeringCard(
   io: Server,
   socket: Socket,
   store: RoomStore,
   payload: { cardId: string; location: string }
 ) {
-  console.log('[Server] discardSocialEngineeringCard:', payload);
+  const session = store.getSession(socket.id);
+  if (!session?.roomId) return;
+  
+  const room = store.getRoom(session.roomId);
+  if (!room?.game) return;
+
+  const game = room.game;
+  const pending = game.pendingSocialEngineering?.get(socket.id);
+  
+  if (!pending) {
+    socket.emit(SOCKET_EVENTS.SOCKET_ERROR, { 
+      code: SocketErrorCode.INVALID_ACTION, 
+      message: 'Нет активного запроса на сброс' 
+    });
+    return;
+  }
+
+  const player = game.players.find(p => p.id === socket.id);
+  if (!player) return;
+
+  let cardExists = false;
+  if (payload.location === 'hand') {
+    cardExists = player.hand.some(c => c.id === payload.cardId);
+  } else if (payload.location === 'equipment') {
+    cardExists = player.equipment.some(c => c.id === payload.cardId);
+  } else if (payload.location === 'control') {
+    cardExists = player.controlCards.some(c => c.id === payload.cardId);
+  }
+
+  if (!cardExists) {
+    socket.emit(SOCKET_EVENTS.SOCKET_ERROR, { 
+      code: SocketErrorCode.INVALID_ACTION, 
+      message: 'Карта не найдена' 
+    });
+    return;
+  }
+
+  let discardedCard: any;
+  if (payload.location === 'hand') {
+    const idx = player.hand.findIndex(c => c.id === payload.cardId);
+    if (idx !== -1) discardedCard = player.hand.splice(idx, 1)[0];
+  } else if (payload.location === 'equipment') {
+    const idx = player.equipment.findIndex(c => c.id === payload.cardId);
+    if (idx !== -1) discardedCard = player.equipment.splice(idx, 1)[0];
+  } else if (payload.location === 'control') {
+    const idx = player.controlCards.findIndex(c => c.id === payload.cardId);
+    if (idx !== -1) discardedCard = player.controlCards.splice(idx, 1)[0];
+  }
+
+  if (discardedCard) {
+    game.discardPile.push(discardedCard);
+    console.log(`[Engine] ${player.nickname} discarded ${discardedCard.type} via Social Engineering`);
+  }
+
+  game.pendingSocialEngineering?.delete(socket.id);
+
+  io.to(`room:${room.id}`).emit(GAME_EVENTS.GAME_STATE_UPDATE, { 
+    gameState: getSafeGameState(game) 
+  });
 }

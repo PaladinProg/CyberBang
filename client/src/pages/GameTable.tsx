@@ -4,12 +4,16 @@ import { useGameStore } from '@/store/useGameStore';
 import { useLobbyStore } from '@/store/lobbyStore';
 import { useSocket } from '@/hooks/useSocket';
 import { LOC } from '@cyberbang/shared/localization';
-import { GamePhase, TurnPhase, CardType, WEAPON_MAX_RANGE, Suit, CardRank } from '@cyberbang/shared/types';
+import { 
+  GamePhase, TurnPhase, CardType, WEAPON_MAX_RANGE, Suit, CardRank, 
+  GAME_EVENTS 
+} from '@cyberbang/shared/types';
 import { motion, AnimatePresence } from 'framer-motion';
 import { DefenseModal } from '@/components/game/DefenseModal';
 import { CriticalDamageModal } from '@/components/game/CriticalDamageModal';
 import { RulebookModal } from '@/components/game/RulebookModal';
 import { CyberTooltip } from '@/components/game/CyberTooltip';
+import { SocialEngineeringModal } from '@/components/game/SocialEngineeringModal';
 
 // --- Вспомогательные функции для отображения карт ---
 function getRankSymbol(rank?: CardRank): string {
@@ -52,6 +56,7 @@ export function GameTable() {
 
   const [showCriticalModal, setShowCriticalModal] = useState(false);
   const [showRulebook, setShowRulebook] = useState(false);
+  const [seRequest, setSeRequest] = useState<{ show: boolean; sourceId: string } | null>(null);
 
   // Состояние активной проверки карты контроля (Бомба / Карантин)
   const [activeCheck, setActiveCheck] = useState<{
@@ -60,31 +65,89 @@ export function GameTable() {
     result: 'EXPLOSION' | 'DEFUSED' | 'FREE' | 'JAIL';
   } | null>(null);
 
+  // ▼▼▼ СОСТОЯНИЕ ДЛЯ ВИЗУАЛИЗАЦИИ КИБЕР-ДУЭЛИ ▼▼▼
+  const [activeDuel, setActiveDuel] = useState<{
+    attackerId: string;
+    defenderId: string;
+    isEnding: boolean;
+    loserId?: string;
+  } | null>(null);
+
   const [prevDiscardCount, setPrevDiscardCount] = useState(gameState?.discardPile?.length ?? 0);
 
   // ▼▼▼ ПОДПИСКА НА СОБЫТИЯ ▼▼▼
   useEffect(() => {
     if (!socket) return;
+    
     const handleIncomingAttack = (data: { requiredDefense?: CardType }) => {
       setDefenseConfig({ show: true, requiredCardType: data.requiredDefense });
     };
+    
     const handleBarrelDefense = () => {};
     const handleCriticalDamage = () => setShowCriticalModal(true);
+
+    const handleSocialEngineeringRequest = (data: { sourceId: string }) => {
+      setSeRequest({ show: true, sourceId: data.sourceId });
+    };
+
+    // ▼▼▼ ПОДПИСКИ НА СОБЫТИЯ ДУЭЛИ ▼▼▼
+    const handleDuelShot = (data: { attackerId: string; defenderId: string }) => {
+      console.log('[Client] Duel shot!', data);
+      setActiveDuel({ 
+        attackerId: data.attackerId, 
+        defenderId: data.defenderId, 
+        isEnding: false 
+      });
+      
+      // Скрываем анимацию выстрела через 1 секунду
+      setTimeout(() => {
+        setActiveDuel(prev => prev ? { ...prev, attackerId: '', defenderId: '' } : null);
+      }, 1000);
+    };
+
+    const handleDuelEnd = (data: { loserId: string; winnerId: string; initiatorId: string }) => {
+      console.log('[Client] Duel ended!', data);
+      setActiveDuel({
+        attackerId: data.winnerId,
+        defenderId: data.loserId,
+        isEnding: true,
+        loserId: data.loserId
+      });
+      
+      // Скрываем финальный экран через 2 секунды
+      setTimeout(() => {
+        setActiveDuel(null);
+      }, 2000);
+    };
 
     socket.on('criticalDamage', handleCriticalDamage);
     socket.on('incomingAttack', handleIncomingAttack);
     socket.on('barrelDefenseSuccess', handleBarrelDefense);
+    socket.on('socialEngineeringRequest', handleSocialEngineeringRequest);
+    
+    // Подписываемся на дуэль
+    socket.on('duelShot', handleDuelShot);
+    socket.on('duelEnd', handleDuelEnd);
 
     return () => {
       socket.off('incomingAttack', handleIncomingAttack);
       socket.off('barrelDefenseSuccess', handleBarrelDefense);
       socket.off('criticalDamage', handleCriticalDamage);
+      socket.off('socialEngineeringRequest', handleSocialEngineeringRequest);
+      // Отписываемся от дуэли
+      socket.off('duelShot', handleDuelShot);
+      socket.off('duelEnd', handleDuelEnd);
     };
   }, [socket]);
 
   // ▼▼▼ АНИМАЦИЯ ПРОВЕРКИ В ЦЕНТРЕ СТОЛА ▼▼▼
   useEffect(() => {
     if (!gameState) return;
+
+    // Сбрасываем активную проверку, если началась фаза рынка или изменился ход
+    if (gameState.turnPhase === TurnPhase.MARKET || prevDiscardCount !== gameState.discardPile.length) {
+       // Не сбрасываем сразу, даем анимации проиграться, но логику обновляем ниже
+    }
 
     if (gameState.discardPile.length > prevDiscardCount) {
       const topCard = gameState.discardPile[gameState.discardPile.length - 1];
@@ -125,7 +188,7 @@ export function GameTable() {
     } else if (gameState.discardPile.length < prevDiscardCount) {
       setPrevDiscardCount(gameState.discardPile.length);
     }
-  }, [gameState?.discardPile.length, gameState?.currentTurnPlayerId, prevDiscardCount]);
+  }, [gameState?.discardPile.length, gameState?.currentTurnPlayerId, prevDiscardCount, gameState?.turnPhase]);
 
   if (!gameState || gameState.phase !== GamePhase.PLAYING) return null;
 
@@ -135,6 +198,9 @@ export function GameTable() {
   const isMyTurn = currentPlayer?.id === gameState.currentTurnPlayerId;
   const phaseName = gameState.turnPhase ? LOC.TURN_PHASE_NAMES[gameState.turnPhase] : '';
   const canPlayCards = isMyTurn && gameState.turnPhase === TurnPhase.EXECUTE;
+  
+  // Флаг: идет ли сейчас фаза рынка
+  const isMarketPhase = gameState.turnPhase === TurnPhase.MARKET;
 
   // ▼▼▼ РАСЧЕТ ПОЗИЦИЙ ▼▼▼
   const getPlayerPosition = (index: number, total: number) => {
@@ -557,20 +623,145 @@ export function GameTable() {
               </span>
             </div>
 
-            {/* Дроп-зона */}
-            <div
-              onDragOver={(e) => {
-                if (canPlayCards) {
-                  e.preventDefault();
-                  e.dataTransfer.dropEffect = 'move';
-                }
-              }}
-              onDrop={handleDropOnTable}
-              className="absolute inset-0 z-10 cursor-pointer"
-              title="Перетащите сюда общие карты и экипировку"
-            />
+            {/* ▼▼▼ ЧЁРНЫЙ РЫНОК (Карты прямо на столе) ▼▼▼ */}
+            {isMarketPhase && gameState.marketCards && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center z-50 pointer-events-none bg-black/20 backdrop-blur-[2px] rounded-xl">
+                <div className="text-cyber-purple font-orbitron text-xl mb-4 animate-pulse tracking-widest bg-black/80 px-6 py-2 rounded-full border border-cyber-purple/50 shadow-[0_0_20px_rgba(176,38,255,0.4)]">
+                  ⚡ ЧЁРНЫЙ РЫНОК ⚡
+                </div>
+                
+                <div className="flex gap-4 p-6 bg-black/60 rounded-2xl border border-yellow-600/40 backdrop-blur-md pointer-events-auto shadow-2xl">
+                  {gameState.marketCards.map((card) => {
+                    const alivePlayers = gameState.players.filter(p => p.isAlive);
+                    const isMyTurnToPick = 
+                      gameState.marketPickerIndex !== undefined &&
+                      alivePlayers[gameState.marketPickerIndex]?.id === mySocketId;
+
+                    return (
+                      <motion.div
+                        key={card.id}
+                        whileHover={isMyTurnToPick ? { scale: 1.15, y: -15, rotateZ: Math.random() * 6 - 3 } : {}}
+                        onClick={() => {
+                          if (isMyTurnToPick && socket) {
+                            socket.emit(GAME_EVENTS.PICK_MARKET_CARD, { cardId: card.id });
+                          }
+                        }}
+                        className={`
+                          w-24 h-32 rounded-xl border-2 bg-white relative cursor-pointer select-none transition-all duration-200
+                          ${isMyTurnToPick 
+                              ? 'border-yellow-400 shadow-[0_0_25px_rgba(250,204,21,0.6)] hover:border-yellow-200 hover:shadow-[0_0_35px_rgba(250,204,21,0.8)]' 
+                              : 'border-gray-600 opacity-70 cursor-not-allowed grayscale scale-95'}
+                        `}
+                      >
+                          {/* Упрощенный вид карты для рынка */}
+                          <div className="absolute inset-0 flex flex-col items-center justify-center p-2 text-center">
+                            <span className="text-xs font-bold text-black leading-tight line-clamp-2 mb-2">
+                              {LOC.CARD_NAMES[card.type]}
+                            </span>
+                            {card.suit && (
+                              <span className={`text-2xl ${getSuitColor(card.suit)}`}>
+                                {getSuitSymbol(card.suit)}
+                              </span>
+                            )}
+                          </div>
+                          
+                          {/* Индикатор "Твой ход" */}
+                          {isMyTurnToPick && (
+                            <div className="absolute -top-3 -right-3 w-5 h-5 bg-green-500 rounded-full animate-ping border-2 border-white shadow-lg" />
+                          )}
+                      </motion.div>
+                    );
+                  })}
+                </div>
+                
+                <div className="mt-6 text-sm text-gray-300 font-mono bg-black/60 px-4 py-2 rounded-lg border border-gray-700">
+                  {gameState.marketPickerIndex !== undefined && 
+                    gameState.players.filter(p => p.isAlive)[gameState.marketPickerIndex]?.id === mySocketId
+                    ? '👉 ВАШ ВЫБОР! Нажмите на карту.' 
+                    : '⏳ Ожидание выбора другого игрока...'}
+                </div>
+              </div>
+            )}
+            {/* ▲▲▲ КОНЕЦ ЧЁРНОГО РЫНКА ▲▲▲ */}
+
+            {/* Дроп-зона (СКРЫТА ВО ВРЕМЯ РЫНКА) */}
+            {!isMarketPhase && (
+              <div
+                onDragOver={(e) => {
+                  if (canPlayCards) {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                  }
+                }}
+                onDrop={handleDropOnTable}
+                className="absolute inset-0 z-10 cursor-pointer"
+                title="Перетащите сюда общие карты и экипировку"
+              />
+            )}
           </div>
         </div>
+
+        {/* ▼▼▼ ОВЕРЛЕЙ КИБЕР-ДУЭЛИ ▼▼▼ */}
+        <AnimatePresence>
+          {activeDuel && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm pointer-events-none"
+            >
+              <div className="relative w-full h-full max-w-4xl mx-auto">
+                
+                {/* Линия соединения между участниками (только во время стрельбы) */}
+                {!activeDuel.isEnding && (
+                  <motion.div 
+                    initial={{ scaleX: 0 }}
+                    animate={{ scaleX: 1 }}
+                    className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-1 bg-red-500 shadow-[0_0_20px_rgba(239,68,68,0.8)] origin-center"
+                    style={{ width: '60%' }}
+                  />
+                )}
+
+                {/* Центральный текст статуса */}
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-center">
+                  {activeDuel.isEnding ? (
+                    <motion.div
+                      initial={{ scale: 0.5, opacity: 0 }}
+                      animate={{ scale: 1.2, opacity: 1 }}
+                      className="text-4xl font-orbitron font-black text-red-500 drop-shadow-[0_0_15px_rgba(239,68,68,1)]"
+                    >
+                      💀 {gameState.players.find(p => p.id === activeDuel.loserId)?.nickname} ПРОИГРАЛ!
+                    </motion.div>
+                  ) : (
+                    <motion.div
+                      key={`${activeDuel.attackerId}-${activeDuel.defenderId}`}
+                      initial={{ y: 20, opacity: 0 }}
+                      animate={{ y: 0, opacity: 1 }}
+                      exit={{ y: -20, opacity: 0 }}
+                      className="text-2xl font-orbitron font-bold text-cyan-400 drop-shadow-[0_0_10px_rgba(6,182,212,0.8)]"
+                    >
+                      🔫 {gameState.players.find(p => p.id === activeDuel.attackerId)?.nickname} СТРЕЛЯЕТ!
+                    </motion.div>
+                  )}
+                </div>
+
+                {/* Индикаторы участников */}
+                {!activeDuel.isEnding && (
+                  <>
+                    <div className="absolute left-[20%] top-1/2 -translate-y-1/2 text-cyan-400 font-bold text-xl">
+                      {gameState.players.find(p => p.id === activeDuel.attackerId)?.nickname}
+                    </div>
+                    <div className="absolute right-[20%] top-1/2 -translate-y-1/2 text-red-400 font-bold text-xl">
+                      {gameState.players.find(p => p.id === activeDuel.defenderId)?.nickname}
+                    </div>
+                  </>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+        {/* ▲▲▲ КОНЕЦ ОВЕРЛЕЯ КИБЕР-ДУЭЛИ ▲▲▲ */}
+
       </main>
 
       {/* РУКА ИГРОКА */}
@@ -665,6 +856,21 @@ export function GameTable() {
         isOpen={showRulebook}
         onClose={() => setShowRulebook(false)}
       />
+
+      {seRequest?.show && currentPlayer && (
+        <SocialEngineeringModal
+          isOpen={true}
+          hand={currentPlayer.hand}
+          equipment={currentPlayer.equipment}
+          controlCards={currentPlayer.controlCards}
+          onDiscard={(cardId, location) => {
+            if (socket) {
+              socket.emit('discardSocialEngineeringCard', { cardId, location });
+              setSeRequest(null);
+            }
+          }}
+        />
+      )}
     </div>
   );
 }
